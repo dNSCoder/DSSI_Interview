@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>สำหรับอาจารย์ · คิวสอบสัมภาษณ์ DSSI</title>
+  <link rel="stylesheet" href="css/output.css">
+  <script src="js/config.js" defer></script>
+  <script src="js/strings.th.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/teacher.js" defer></script>
+  <script src="vendor/alpine.min.js" defer></script>
+</head>
+<body>
+<div class="page" x-data="teacherPage" x-cloak>
+  <header class="topbar">
+    <img class="logo" src="assets/dssi-logo.png" alt="DSSI">
+    <a class="btn btn-nav" href="index.html" x-show="view === 'login'" x-text="T.navStudent"></a>
+    <button type="button" class="btn btn-nav" x-show="view === 'main'" @click="logout()" :disabled="busy" x-text="T.logout"></button>
+  </header>
+
+  <div class="alert-info" role="status" x-show="offline" x-text="S.err.network"></div>
+
+  <!-- 3. เข้าสู่ระบบ -->
+  <main class="main-grid" x-show="view === 'login'">
+    <section class="col-left">
+      <h1 class="heading-xl"><span x-text="T.loginTop"></span><br><span class="grad-text" x-text="T.loginGrad"></span></h1>
+      <p class="lead" x-text="T.loginLead"></p>
+    </section>
+
+    <form class="col-right card" @submit.prevent="login()" novalidate>
+      <div>
+        <label class="label" for="t-name" x-text="T.name"></label>
+        <select id="t-name" class="field" x-model="form.name" autocomplete="off">
+          <option value="" x-text="teachersLoaded ? T.namePlaceholder : T.loadingTeachers"></option>
+          <template x-for="n in teachers" :key="n">
+            <option :value="n" x-text="n"></option>
+          </template>
+        </select>
+      </div>
+      <div>
+        <label class="label" for="t-pass" x-text="T.password"></label>
+        <input id="t-pass" class="field" type="password" x-model="form.password" autocomplete="current-password">
+      </div>
+      <div>
+        <label class="label" for="t-round" x-text="T.round"></label>
+        <input id="t-round" class="field" type="text" x-model="form.round" autocomplete="off" autocapitalize="characters">
+      </div>
+      <p class="alert" role="alert" x-show="error" x-text="error"></p>
+      <button type="submit" class="btn btn-primary" :disabled="busy" x-text="T.login"></button>
+    </form>
+  </main>
+
+  <!-- 4. หลังเข้าสู่ระบบ (กำลังสัมภาษณ์ / ว่าง / พัก / ครบรอบ) -->
+  <main class="main-grid" x-show="view === 'main' && state">
+    <template x-if="state">
+      <section class="col-left">
+        <span class="badge"><span class="dot" :class="dotClass"></span><span x-text="badgeText"></span></span>
+        <h1 class="heading-lg break-words">
+          <span x-text="headTop"></span><br><span class="grad-text" x-text="headGrad"></span>
+        </h1>
+        <p class="lead" x-text="leadText"></p>
+      </section>
+    </template>
+
+    <template x-if="state">
+      <section class="col-right card">
+        <div>
+          <label class="label" for="t-meet" x-text="T.meetLabel"></label>
+          <input id="t-meet" class="field" type="url" inputmode="url" autocomplete="off"
+                 :placeholder="T.meetPlaceholder" x-model="meetInput" :disabled="isBusy || busy">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div class="stat">
+            <div class="stat-num" x-text="state.waiting"></div>
+            <div class="small" x-text="T.statWaiting"></div>
+          </div>
+          <div class="stat">
+            <div class="stat-num" x-text="state.done"></div>
+            <div class="small" x-text="T.statDone"></div>
+          </div>
+        </div>
+        <p class="alert" role="alert" x-show="error" x-text="error"></p>
+
+        <div class="stack-bottom flex flex-col gap-3">
+          <a class="btn btn-secondary" x-show="isBusy" :href="meetHref" :aria-disabled="!meetOk"
+             target="_blank" rel="noopener noreferrer" x-text="T.openMeet"></a>
+          <button type="button" class="btn btn-primary" x-show="isBusy" @click="act('finish')" :disabled="busy" x-text="T.finish"></button>
+          <button type="button" class="btn btn-primary" x-show="isRest" @click="act('free')" :disabled="busy" x-text="T.free"></button>
+          <button type="button" class="btn btn-secondary" x-show="isFree" @click="act('rest')" :disabled="busy" x-text="T.rest"></button>
+        </div>
+      </section>
+    </template>
+  </main>
+
+  <footer class="footer"><span x-text="S.course"></span></footer>
+</div>
+</body>
+</html>

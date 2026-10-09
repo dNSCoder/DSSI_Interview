@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>คิวสอบสัมภาษณ์ DSSI</title>
+  <link rel="stylesheet" href="css/output.css">
+  <script src="js/config.js" defer></script>
+  <script src="js/strings.th.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/student.js" defer></script>
+  <script src="vendor/alpine.min.js" defer></script>
+</head>
+<body>
+<div class="page" x-data="studentPage" x-cloak>
+  <header class="topbar">
+    <img class="logo" src="assets/dssi-logo.png" alt="DSSI">
+    <a class="btn btn-nav" href="teacher.html" x-text="T.navTeacher"></a>
+  </header>
+
+  <div class="alert-info" role="status" x-show="offline" x-text="S.err.network"></div>
+
+  <!-- กรอกรหัสนักเรียน -->
+  <main class="main-grid" x-show="!info">
+    <section class="col-left">
+      <h1 class="heading-xl"><span x-text="T.idTitleTop"></span><br><span class="grad-text" x-text="T.idTitleGrad"></span></h1>
+      <p class="lead" x-text="T.idLead"></p>
+    </section>
+    <form class="col-right card" @submit.prevent="submitId()" novalidate>
+      <div>
+        <label class="label" for="s-id" x-text="T.idLabel"></label>
+        <input id="s-id" class="field" type="text" inputmode="numeric" autocomplete="off" x-model="idInput">
+      </div>
+      <p class="alert" role="alert" x-show="error" x-text="error"></p>
+      <button type="submit" class="btn btn-primary" :disabled="busy" x-text="T.idSubmit"></button>
+    </form>
+  </main>
+
+  <!-- 1. รอคิว -->
+  <main class="main-grid" x-show="isWait">
+    <template x-if="isWait">
+      <section class="col-left">
+        <span class="badge"><span class="dot dot-go"></span><span x-text="T.badgeWait(info.round, info.freeTeachers)"></span></span>
+        <h1 class="heading-xl"><span x-text="T.youAre"></span><br><span class="grad-text" x-text="T.queueNo(info.position)"></span></h1>
+        <p class="lead" x-text="T.waitLead"></p>
+        <div class="flex flex-wrap items-center gap-2" role="img" :aria-label="T.aheadLabel(info.ahead) + ' ' + T.behindLabel(info.behind)">
+          <template x-for="i in range(aheadDots)" :key="'a' + i"><span class="q-dot"></span></template>
+          <span class="q-you" x-text="T.you"></span>
+          <template x-for="i in range(behindDots)" :key="'b' + i"><span class="q-back"></span></template>
+        </div>
+      </section>
+    </template>
+    <template x-if="isWait">
+      <section class="col-right card">
+        <div>
+          <div class="small" x-text="T.roundTag(info.round)"></div>
+          <div class="font-heading text-2xl font-bold" x-text="info.name"></div>
+          <div class="small"><span x-text="T.idCard"></span> <span x-text="id"></span></div>
+        </div>
+        <button type="button" class="btn btn-secondary" @click="changeId()" x-text="T.changeId"></button>
+      </section>
+    </template>
+  </main>
+
+  <!-- 2. ถึงคิว -->
+  <main class="main-grid" x-show="isBusy">
+    <template x-if="isBusy">
+      <section class="col-left">
+        <span class="badge"><span class="dot dot-go"></span><span x-text="T.badgeBusy"></span></span>
+        <h1 class="heading-xl"><span x-text="T.busyTop"></span><br><span class="grad-text" x-text="T.busyGrad"></span></h1>
+        <p class="lead" x-text="T.busyLead"></p>
+      </section>
+    </template>
+    <template x-if="isBusy">
+      <section class="col-right card">
+        <div class="card-soft">
+          <div class="small" x-text="T.teacherLabel"></div>
+          <div class="font-heading text-2xl font-bold" x-text="info.teacher"></div>
+          <div class="small mt-2" x-text="T.meetRoom"></div>
+        </div>
+        <p class="alert" role="alert" x-show="!meetOk" x-text="T.meetInvalid"></p>
+        <div class="stack-bottom">
+          <a class="btn btn-primary" :href="meetHref" :aria-disabled="!meetOk" target="_blank" rel="noopener noreferrer">
+            <span x-text="T.joinMeet"></span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </a>
+        </div>
+      </section>
+    </template>
+  </main>
+
+  <!-- เสร็จแล้ว -->
+  <main class="main-grid" x-show="isDone">
+    <section class="col-left">
+      <span class="badge"><span class="dot"></span><span x-text="T.badgeDone"></span></span>
+      <h1 class="heading-xl"><span x-text="T.doneTop"></span><br><span class="grad-text" x-text="T.doneGrad"></span></h1>
+      <p class="lead" x-text="T.doneLead"></p>
+      <button type="button" class="btn btn-secondary" @click="changeId()" x-text="T.changeId"></button>
+    </section>
+  </main>
+
+  <footer class="footer"><span x-text="S.course"></span></footer>
+</div>
+</body>
+</html>

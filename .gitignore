@@ -1,0 +1,6 @@
+tools/
+node_modules/
+.clasp.json
+*.xlsx
+*.csv
+.claude/settings.local.json
