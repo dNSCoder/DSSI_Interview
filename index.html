@@ -24,31 +24,60 @@
   </header>
 
   <div class="alert-info" role="status" x-show="offline" x-text="S.err.network"></div>
+  <div class="alert-info" role="status" x-show="pollProblem && !offline" x-text="T.pollProblem"></div>
 
-  <!-- กรอกรหัสนักเรียน -->
-  <main class="main-grid" x-show="!info">
+  <!-- 0. เข้าคิว: ชื่อ + เบอร์โทรศัพท์ -->
+  <main class="main-grid" x-show="showForm">
     <section class="col-left">
-      <h1 class="heading-xl"><span x-text="T.idTitleTop"></span><br><span class="grad-text" x-text="T.idTitleGrad"></span></h1>
-      <p class="lead" x-text="T.idLead"></p>
+      <h1 class="heading-xl"><span x-text="T.joinTop"></span><br><span class="grad-text" x-text="T.joinGrad"></span></h1>
+      <p class="lead" x-text="T.joinLead"></p>
     </section>
-    <form class="col-right card" @submit.prevent="submitId()" novalidate>
+    <form class="col-right card" @submit.prevent="join()" novalidate>
       <div>
-        <label class="label" for="s-id" x-text="T.idLabel"></label>
-        <input id="s-id" class="field" type="text" inputmode="numeric" autocomplete="off" x-model="idInput">
+        <label class="label" for="s-name" x-text="T.nameLabel"></label>
+        <input id="s-name" class="field" type="text" autocomplete="name" aria-describedby="s-name-hint" x-model="nameInput">
+        <p id="s-name-hint" class="small mt-1" x-text="T.nameHint"></p>
+      </div>
+      <div>
+        <label class="label" for="s-phone" x-text="T.phoneLabel"></label>
+        <input id="s-phone" class="field" type="tel" inputmode="tel" autocomplete="tel" aria-describedby="s-phone-hint" x-model="phoneInput">
+        <p id="s-phone-hint" class="small mt-1" x-text="T.phoneHint"></p>
       </div>
       <p class="alert" role="alert" x-show="error" x-text="error"></p>
-      <button type="submit" class="btn btn-primary" :disabled="busy" x-text="T.idSubmit"></button>
+      <button type="submit" class="btn btn-primary" :disabled="busy" x-text="T.joinSubmit"></button>
     </form>
+  </main>
+
+  <!-- 0.1 เลือกรอบ (ชื่ออยู่หลายรอบ) -->
+  <main class="main-grid" x-show="showPick">
+    <section class="col-left">
+      <h1 class="heading-xl"><span x-text="T.pickTop"></span><br><span class="grad-text" x-text="T.pickGrad"></span></h1>
+      <p class="lead" x-text="T.pickLead"></p>
+    </section>
+    <section class="col-right card">
+      <template x-for="r in rounds" :key="r.code">
+        <button type="button" class="btn btn-secondary" :disabled="busy" @click="pickRound(r.code)" x-text="r.name"></button>
+      </template>
+      <p class="alert" role="alert" x-show="error" x-text="error"></p>
+      <button type="button" class="btn btn-secondary" :disabled="busy" @click="backToForm()" x-text="T.pickBack"></button>
+    </section>
+  </main>
+
+  <!-- กำลังตรวจสอบตั๋วที่จำไว้ -->
+  <main class="main-grid" x-show="showLoading">
+    <section class="col-left">
+      <p class="lead" role="status" x-text="T.loading"></p>
+    </section>
   </main>
 
   <!-- 1. รอคิว -->
   <main class="main-grid" x-show="isWait">
     <template x-if="isWait">
       <section class="col-left">
-        <span class="badge"><span class="dot dot-go"></span><span x-text="T.badgeWait(info.round, info.freeTeachers)"></span></span>
+        <span class="badge"><span class="dot dot-go"></span><span x-text="T.badgeWait(info.roundName, info.freeTeachers)"></span></span>
         <h1 class="heading-xl"><span x-text="T.youAre"></span><br><span class="grad-text" x-text="T.queueNo(info.position)"></span></h1>
         <p class="lead" x-text="T.waitLead"></p>
-        <div class="flex flex-wrap items-center gap-2" role="img" :aria-label="T.aheadLabel(info.ahead) + ' ' + T.behindLabel(info.behind)">
+        <div class="flex flex-wrap items-center gap-2" role="img" :aria-label="T.aheadLabel(info.ahead) + ' ' + T.behindLabel(info.behind || 0)">
           <template x-for="i in range(aheadDots)" :key="'a' + i"><span class="q-dot"></span></template>
           <span class="q-you" x-text="T.you"></span>
           <template x-for="i in range(behindDots)" :key="'b' + i"><span class="q-back"></span></template>
@@ -58,11 +87,15 @@
     <template x-if="isWait">
       <section class="col-right card">
         <div>
-          <div class="small" x-text="T.roundTag(info.round)"></div>
-          <div class="font-heading text-2xl font-bold" x-text="info.name"></div>
-          <div class="small"><span x-text="T.idCard"></span> <span x-text="id"></span></div>
+          <div class="small" x-text="info.roundName"></div>
+          <div class="font-heading text-2xl font-bold break-words" x-text="info.name"></div>
         </div>
-        <button type="button" class="btn btn-secondary" @click="changeId()" x-text="T.changeId"></button>
+        <button type="button" class="btn btn-secondary" x-show="!confirmChange" @click="askChange()" x-text="T.changeName"></button>
+        <div class="flex flex-col gap-3" x-show="confirmChange">
+          <p class="alert" role="alert" x-text="T.changeWarn"></p>
+          <button type="button" class="btn btn-primary" @click="changeName()" x-text="T.changeConfirm"></button>
+          <button type="button" class="btn btn-secondary" @click="confirmChange = false" x-text="T.cancel"></button>
+        </div>
       </section>
     </template>
   </main>
@@ -80,7 +113,7 @@
       <section class="col-right card">
         <div class="card-soft">
           <div class="small" x-text="T.teacherLabel"></div>
-          <div class="font-heading text-2xl font-bold" x-text="info.teacher"></div>
+          <div class="font-heading text-2xl font-bold break-words" x-text="info.teacher"></div>
           <div class="small mt-2" x-text="T.meetRoom"></div>
         </div>
         <p class="alert" role="alert" x-show="!meetOk" x-text="T.meetInvalid"></p>
@@ -100,7 +133,17 @@
       <span class="badge"><span class="dot"></span><span x-text="T.badgeDone"></span></span>
       <h1 class="heading-xl"><span x-text="T.doneTop"></span><br><span class="grad-text" x-text="T.doneGrad"></span></h1>
       <p class="lead" x-text="T.doneLead"></p>
-      <button type="button" class="btn btn-secondary" @click="changeId()" x-text="T.changeId"></button>
+      <button type="button" class="btn btn-secondary" @click="changeName()" x-text="T.newEntry"></button>
+    </section>
+  </main>
+
+  <!-- ถูกข้ามคิว -->
+  <main class="main-grid" x-show="isSkipped">
+    <section class="col-left">
+      <span class="badge"><span class="dot dot-danger"></span><span x-text="T.badgeSkipped"></span></span>
+      <h1 class="heading-xl"><span x-text="T.skippedTop"></span><br><span class="grad-text" x-text="T.skippedGrad"></span></h1>
+      <p class="lead" x-text="T.skippedLead"></p>
+      <button type="button" class="btn btn-secondary" @click="changeName()" x-text="T.newEntry"></button>
     </section>
   </main>
 

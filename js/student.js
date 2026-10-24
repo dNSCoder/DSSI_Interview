@@ -2,45 +2,53 @@ document.addEventListener('alpine:init', function () {
   var S = window.DSSI_STRINGS;
   var T = S.student;
   var local = window.safeStore('local');
-  var KEY_ID = 'dssi_student_id';
+  var KEY_TICKET = 'dssi_student_ticket';
   var MAX_DOTS = 8;
 
   Alpine.data('studentPage', function () {
     return {
       S: S,
       T: T,
-      idInput: '',
-      id: '',
-      info: null, // คำตอบล่าสุดจาก action=student
+      step: 'form', // form | pick (เลือกรอบเมื่อชื่ออยู่หลายรอบ)
+      nameInput: '',
+      phoneInput: '',
+      rounds: [],
+      ticket: '',
+      info: null, // คำตอบล่าสุดจาก action=status
       busy: false,
+      polling: false,
       error: '',
+      pollProblem: false,
       offline: false,
+      confirmChange: false,
       timer: null,
 
       init: function () {
         var self = this;
-        var saved = local.get(KEY_ID);
+        var saved = local.get(KEY_TICKET);
         if (saved) {
-          this.id = saved;
-          this.idInput = saved;
+          this.ticket = saved;
           this.poll(true);
         }
-        this.timer = setInterval(function () { self.poll(false); }, window.DSSI_CONFIG.POLL_MS);
+        this.timer = setInterval(function () { self.poll(false); }, window.DSSI_CONFIG.STUDENT_POLL_MS);
         document.addEventListener('visibilitychange', function () {
           if (!document.hidden) self.poll(false);
         });
       },
 
-      submitId: async function () {
+      // ---------------------------------------------------------- เข้าคิว
+      join: async function (round) {
         if (this.busy) return;
-        var id = this.idInput.trim();
-        if (!id) {
-          this.error = S.err.needId;
-          return;
-        }
+        var name = this.nameInput.trim();
+        var phone = this.phoneInput.trim();
+        if (!name) { this.error = S.err.needName; return; }
+        if (!phone) { this.error = S.err.needPhone; return; }
+        var body = { action: 'join', name: name, phone: phone };
+        if (round) body.round = round;
+
         this.busy = true;
         this.error = '';
-        var res = await window.apiGet({ action: 'student', id: id });
+        var res = await window.apiPost(body);
         this.busy = false;
         if (!res.ok) {
           if (res.network) this.offline = true;
@@ -48,43 +56,87 @@ document.addEventListener('alpine:init', function () {
           return;
         }
         this.offline = false;
-        this.id = id;
-        local.set(KEY_ID, id);
-        this.info = res;
+        if (res.needRound) {
+          this.rounds = res.rounds || [];
+          this.step = 'pick';
+          return;
+        }
+        // เก็บเฉพาะตั๋ว ไม่เก็บชื่อหรือเบอร์
+        local.set(KEY_TICKET, res.ticket);
+        this.ticket = res.ticket;
+        this.nameInput = '';
+        this.phoneInput = '';
+        this.rounds = [];
+        this.step = 'form';
+        this.poll(true);
       },
 
-      changeId: function () {
-        this.id = '';
+      pickRound: function (code) {
+        this.join(code);
+      },
+
+      backToForm: function () {
+        this.step = 'form';
+        this.rounds = [];
+        this.error = '';
+      },
+
+      // ---------------------------------------------------------- ออกจากตั๋วเดิม
+      askChange: function () {
+        // นักเรียนที่รออยู่ต้องยืนยันก่อน เพราะเข้าคิวซ้ำเองไม่ได้
+        if (this.isWait) this.confirmChange = true;
+        else this.changeName();
+      },
+
+      changeName: function () {
+        this.ticket = '';
         this.info = null;
         this.error = '';
-        local.remove(KEY_ID);
+        this.pollProblem = false;
+        this.confirmChange = false;
+        this.step = 'form';
+        local.remove(KEY_TICKET);
       },
 
+      // ---------------------------------------------------------- สถานะ
       poll: async function (force) {
-        if (!this.id) return;
+        if (!this.ticket || this.polling) return;
         if (!force && (document.hidden || this.busy)) return;
-        if (this.info && this.info.status === 'done') return; // หยุดเมื่อเสร็จ
-        var res = await window.apiGet({ action: 'student', id: this.id });
+        if (this.info && (this.info.status === 'done' || this.info.status === 'skipped')) return;
+        var ticket = this.ticket;
+        this.polling = true;
+        var res = await window.apiPost({ action: 'status', ticket: ticket });
+        this.polling = false;
+        if (this.ticket !== ticket) return; // ผู้ใช้เปลี่ยนชื่อระหว่างรอคำตอบ
         if (!res.ok) {
           if (res.network) {
             this.offline = true;
-          } else {
-            // รหัสที่จำไว้ใช้ไม่ได้แล้ว กลับไปหน้ากรอกรหัส
+          } else if (res.gone) {
+            // ระบบยืนยันว่าไม่มีตั๋วนี้แล้ว จึงกลับไปหน้าเข้าคิว
             this.offline = false;
-            this.changeId();
+            this.changeName();
             this.error = res.error || S.err.generic;
+          } else {
+            // error ชั่วคราวของระบบ เก็บตั๋วไว้และลองใหม่รอบหน้า
+            this.offline = false;
+            this.pollProblem = true;
           }
           return;
         }
         this.offline = false;
+        this.pollProblem = false;
         this.info = res;
       },
 
       // ---------------------------------------------------------- view helpers
       get status() { return this.info ? this.info.status : ''; },
+      get showForm() { return !this.ticket && this.step === 'form'; },
+      get showPick() { return !this.ticket && this.step === 'pick'; },
+      get showLoading() { return !!this.ticket && !this.info; },
       get isWait() { return this.status === 'wait'; },
       get isBusy() { return this.status === 'busy'; },
       get isDone() { return this.status === 'done'; },
+      get isSkipped() { return this.status === 'skipped'; },
       get meetOk() { return this.isBusy && window.isMeetUrl(this.info.meet); },
       get meetHref() { return this.meetOk ? this.info.meet.trim() : '#'; },
       get aheadDots() { return Math.min(this.info ? this.info.ahead || 0 : 0, MAX_DOTS); },
