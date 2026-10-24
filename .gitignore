@@ -1,6 +1,25 @@
+# ข้อมูลจริงและไฟล์ export ของชีต (ห้ามขึ้น repo)
+*.csv
+*.xlsx
+*.xls
+
+# ไบนารี Tailwind CLI และเครื่องมือในเครื่อง
 tools/
 node_modules/
+
+# clasp (ถ้าใช้) มีข้อมูลล็อกอิน
 .clasp.json
-*.xlsx
-*.csv
+.clasprc.json
+
+# ไฟล์ตั้งค่าลับ / กุญแจ
+.env
+.env.*
+*.pem
+*.key
+
+# ตั้งค่าเฉพาะเครื่อง
 .claude/settings.local.json
+
+# ไฟล์ขยะของระบบปฏิบัติการ
+.DS_Store
+Thumbs.db
