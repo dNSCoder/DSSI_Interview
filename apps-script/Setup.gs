@@ -11,8 +11,8 @@
 
 const V2_HEADERS = {
   Teachers: ['ชื่อ', 'อีเมล', 'รหัสผ่าน'],
-  Rounds: ['รหัสรอบ', 'ชื่อรอบ', 'เปิดรับ'],
-  Students: ['ตั๋ว', 'ชื่อ', 'รอบ', 'สถานะ', 'เวลาเข้าคิว', 'อาจารย์', 'ลิงก์ Meet', 'เวลารับคิว'],
+  Rounds: ['รหัสรอบ', 'ชื่อรอบ', 'เปิดรับ', 'ถาม Portfolio', 'ลิงก์ฟอร์ม'],
+  Students: ['ตั๋ว', 'ชื่อ', 'รอบ', 'สถานะ', 'เวลาเข้าคิว', 'อาจารย์', 'ลิงก์ Meet', 'เวลารับคิว', 'เบอร์ท้าย 4 หลัก'],
   TeacherState: ['อีเมล', 'รอบ', 'สถานะ', 'ลิงก์ Meet', 'ตั๋วปัจจุบัน']
 };
 
@@ -22,15 +22,15 @@ const V2_SAMPLE = {
     ['อาจารย์ทดสอบ 2', 'teacher2@example.com', 'test-pass-2']
   ],
   Rounds: [
-    ['A', 'รอบทดสอบ A', true],
-    ['B', 'รอบทดสอบ B', false]
+    ['27_10_2026_port', '27 ต.ค. 2569 Portfolio', true, true, ''],
+    ['28_10_2026_direct', '28 ต.ค. 2569 รับตรง', false, false, '']
   ],
   Students: [
-    ['', 'นักเรียนทดสอบ 1', 'A', '', '', '', '', ''],
-    ['', 'นักเรียนทดสอบ 2', 'A', '', '', '', '', ''],
-    ['', 'นักเรียนทดสอบ 3', 'A', '', '', '', '', ''],
-    ['', 'นักเรียนทดสอบ 4', 'A', '', '', '', '', ''],
-    ['', 'นักเรียนทดสอบ 5', 'B', '', '', '', '', '']
+    ['', 'นักเรียนทดสอบ 1', '27_10_2026_port', '', '', '', '', '', '1111'],
+    ['', 'นักเรียนทดสอบ 2', '27_10_2026_port', '', '', '', '', '', '2222'],
+    ['', 'นักเรียนทดสอบ 3', '27_10_2026_port', '', '', '', '', '', '3333'],
+    ['', 'นักเรียนทดสอบ 4', '27_10_2026_port', '', '', '', '', '', '4444'],
+    ['', 'นักเรียนทดสอบ 5', '28_10_2026_direct', '', '', '', '', '', '5555']
   ],
   TeacherState: []
 };
@@ -95,14 +95,24 @@ function writeTab_(sh, name) {
   sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
   sh.setFrozenRows(1);
 
+  if (name === 'Rounds') {
+    // รหัสรอบ = ชื่อแท็บคำตอบในไฟล์ Roster (เช่น 27_10_2026_port) เป็นข้อความ ตั้งเป็น plain text ก่อนใส่ค่า
+    sh.getRange(2, 1, 200, 2).setNumberFormat('@');
+  }
+  if (name === 'Students') {
+    // เบอร์ท้าย 4 หลักเป็นข้อความ กันเลข 0 นำหน้าหาย (เช่น 0123)
+    sh.getRange(2, 9, 1000, 1).setNumberFormat('@');
+  }
   if (rows.length) {
     sh.getRange(2, 1, rows.length, head.length).setValues(rows);
   }
 
   if (name === 'Rounds') {
-    // ช่อง "เปิดรับ" เป็นช่องติ๊ก ผู้ดูแลเพิ่มรอบใหม่ได้โดยเพิ่มแถว
-    sh.getRange(2, 3, 200, 1).insertCheckboxes();
-    if (rows.length) sh.getRange(2, 3, rows.length, 1).setValues(rows.map(function (r) { return [r[2]]; }));
+    // ช่อง "เปิดรับ" และ "ถาม Portfolio" เป็นช่องติ๊ก ผู้ดูแลเพิ่มรอบใหม่ได้โดยเพิ่มแถว
+    sh.getRange(2, 3, 200, 2).insertCheckboxes();
+    if (rows.length) {
+      sh.getRange(2, 3, rows.length, 2).setValues(rows.map(function (r) { return [r[2], r[3]]; }));
+    }
   }
   if (name === 'Students') {
     setListValidation_(sh.getRange(2, 4, 1000, 1), STUDENT_STATUSES);

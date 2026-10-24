@@ -1,15 +1,19 @@
 /**
- * RosterForm.gs — สร้าง Google Form เก็บข้อมูลผู้เข้าสอบสัมภาษณ์ และส่งคำตอบเข้าไฟล์ DSSI_Interview_Roster
+ * RosterForm.gs — สร้าง Google Form ต่อรอบ และส่งคำตอบเข้าไฟล์ DSSI_Interview_Roster
  * วางเป็นไฟล์แยกในโปรเจกต์ Apps Script ของไฟล์หลัก (ข้าง Code.gs, Setup.gs, Roster.gs)
  *
- * createRosterForm()      รันครั้งเดียว สร้างฟอร์ม + หา/สร้างไฟล์ DSSI_Interview_Roster + ผูกคำตอบเข้าไฟล์นั้น
- *                         + ตั้ง Script property ROSTER_SHEET_ID ให้เอง (Roster.gs ใช้ค่านี้)
- * prepareRosterSheet()    เพิ่มคอลัมน์ "รอบ" (พร้อม dropdown รหัสรอบจากแท็บ Rounds) ในแท็บคำตอบ
- *                         รันซ้ำได้ เช่น หลังเพิ่มรอบใหม่ เพื่อรีเฟรชรายการใน dropdown
- * showRosterFormLinks()   แสดงลิงก์ฟอร์ม (สำหรับแก้ไข / สำหรับส่งให้นักเรียน) และลิงก์ไฟล์ Roster
+ * แนวคิด: หนึ่งรอบ = หนึ่งฟอร์ม = หนึ่งแท็บคำตอบในไฟล์ Roster และชื่อแท็บ = รหัสรอบ
  *
- * ครั้งแรกที่รันจะขอสิทธิ์เพิ่ม: Google Forms, Google Drive และ Sheets
- * ฟอร์มกับไฟล์ Roster จะเป็นของบัญชีที่รันสคริปต์ (ควรเป็นบัญชีเดียวกับเจ้าของไฟล์หลัก)
+ * วิธีใช้
+ *   1. เพิ่มแถวรอบในแท็บ Rounds ของไฟล์หลัก: A รหัสรอบ (เช่น 27_10_2026_port), B ชื่อรอบ,
+ *      C เปิดรับ, D ถาม Portfolio (ติ๊กถ้ารอบนี้ต้องกรอกลิงก์ Portfolio) ปล่อย E ว่างไว้
+ *   2. รัน createRoundForms() จะสร้างฟอร์มให้ทุกแถวที่ช่อง E ยังว่าง เปลี่ยนชื่อแท็บคำตอบเป็นรหัสรอบ
+ *      และเขียนลิงก์ฟอร์ม (ส่งให้นักเรียน) ลงช่อง E ให้เอง รันซ้ำได้ ไม่สร้างฟอร์มซ้ำให้แถวที่มีลิงก์แล้ว
+ *   3. showRoundFormLinks() แสดงลิงก์ส่งนักเรียนและลิงก์แก้ไขของทุกฟอร์ม
+ *
+ * รหัสรอบห้ามมีอักขระ / \ : ? * [ ] และยาวไม่เกิน 100 ตัวอักษร (เป็นชื่อแท็บของ Google Sheets)
+ * ครั้งแรกที่รันจะขอสิทธิ์: Google Forms, Google Drive และ Sheets
+ * ฟอร์มกับไฟล์ Roster เป็นของบัญชีที่รันสคริปต์ (ควรเป็นบัญชีเดียวกับเจ้าของไฟล์หลัก)
  */
 
 const RF = {
@@ -20,22 +24,104 @@ const RF = {
     'กรอกข้อมูลสำหรับการสอบสัมภาษณ์เข้าศึกษาในหลักสูตร Data Science and Software Innovation (DSSI) ' +
     'มหาวิทยาลัยอุบลราชธานี\n' +
     'ข้อมูลที่กรอกใช้เพื่อการสอบสัมภาษณ์เท่านั้น [ปรับข้อความตามประกาศของหลักสูตร]',
-  CONFIRM_MSG: 'บันทึกข้อมูลแล้ว ใช้ชื่อ-สกุลที่กรอกนี้เป็นชื่อเมื่อเข้าคิวสอบสัมภาษณ์ในวันสอบ',
+  CONFIRM_MSG: 'บันทึกข้อมูลแล้ว ใช้ชื่อ-สกุลและเบอร์โทรศัพท์ที่กรอกนี้ยืนยันตัวตนเมื่อเข้าคิวสอบสัมภาษณ์ในวันสอบ',
   // 'VERIFIED' = ใช้อีเมลบัญชี Google ที่ล็อกอิน (ต้องล็อกอินก่อนตอบ) / 'INPUT' = ให้ผู้ตอบพิมพ์อีเมลเอง
-  EMAIL_MODE: 'VERIFIED',
-  REQUIRE_PORTFOLIO: true
+  EMAIL_MODE: 'VERIFIED'
 };
 
-function createRosterForm() {
+function createRoundForms() {
+  const main = SpreadsheetApp.getActive();
+  const roundsTab = main ? main.getSheetByName('Rounds') : null;
+  if (!roundsTab) throw new Error('ไม่พบแท็บ Rounds ในไฟล์หลัก ให้รัน setupV2() ก่อน');
+
   const props = PropertiesService.getScriptProperties();
-  if (props.getProperty('ROSTER_FORM_ID')) {
-    throw new Error('สร้างฟอร์มไว้แล้ว (มี ROSTER_FORM_ID) ถ้าต้องการสร้างใหม่ ' +
-      'ให้ลบคีย์นี้ใน Project Settings > Script properties ก่อน (ฟอร์มเก่าไม่ถูกลบ)');
+  const roster = rfGetOrCreateRoster_();
+  const rows = roundsTab.getDataRange().getValues();
+  const registry = rfReadRegistry_();
+  const notes = [];
+  let made = 0;
+
+  for (let i = 1; i < rows.length; i++) {
+    const code = String(rows[i][0]).trim();
+    const label = String(rows[i][1]).trim();
+    const askPortfolio = rows[i][3] === true;
+    const existingLink = String(rows[i][4] == null ? '' : rows[i][4]).trim();
+    if (!code || existingLink) continue;
+
+    try {
+      rfValidateCode_(code);
+    } catch (e) {
+      notes.push('แถว ' + (i + 1) + ': ' + e.message + ' (ข้าม)');
+      continue;
+    }
+    if (roster.getSheetByName(code)) {
+      notes.push('แถว ' + (i + 1) + ': ไฟล์ Roster มีแท็บชื่อ "' + code + '" อยู่แล้ว จึงไม่สร้างฟอร์มซ้ำ ' +
+        'ถ้าแท็บนั้นผูกกับฟอร์มเดิมอยู่ ให้วางลิงก์ฟอร์มเดิมลงช่อง E ของแถวนี้เอง');
+      continue;
+    }
+
+    const form = rfBuildForm_(label || code, askPortfolio);
+    const before = roster.getSheets().map(function (s) { return s.getSheetId(); });
+    form.setDestination(FormApp.DestinationType.SPREADSHEET, roster.getId());
+
+    const tab = rfWaitNewTab_(roster.getId(), before);
+    if (tab) {
+      tab.setName(code);
+    } else {
+      notes.push('แถว ' + (i + 1) + ': สร้างฟอร์มแล้วแต่ยังไม่พบแท็บคำตอบ ' +
+        'ให้เปลี่ยนชื่อแท็บคำตอบของฟอร์มนี้ในไฟล์ Roster เป็น "' + code + '" เอง');
+    }
+
+    roundsTab.getRange(i + 1, 5).setValue(form.getPublishedUrl());
+    registry[code] = form.getId();
+    made++;
   }
 
-  const ss = rfGetOrCreateRoster_();
+  props.setProperty('ROUND_FORMS', JSON.stringify(registry));
+  const summary = 'สร้างฟอร์มใหม่ ' + made + ' ฟอร์ม' +
+    (notes.length ? '\n' + notes.join('\n') : '') +
+    '\nดูลิงก์ในช่อง E ของแท็บ Rounds หรือรัน showRoundFormLinks()';
+  Logger.log(summary);
+  return summary;
+}
 
-  const form = FormApp.create(RF.FORM_TITLE);
+function showRoundFormLinks() {
+  const props = PropertiesService.getScriptProperties();
+  const registry = rfReadRegistry_();
+  const out = [];
+  Object.keys(registry).forEach(function (code) {
+    try {
+      const f = FormApp.openById(registry[code]);
+      out.push(code + '\n  ส่งนักเรียน: ' + f.getPublishedUrl() + '\n  แก้ไขฟอร์ม: ' + f.getEditUrl());
+    } catch (e) {
+      out.push(code + ': เปิดฟอร์มไม่ได้ (' + e + ')');
+    }
+  });
+  const legacyId = props.getProperty('ROSTER_FORM_ID');
+  if (legacyId) {
+    try {
+      const f = FormApp.openById(legacyId);
+      out.push('ฟอร์มเดิม (สร้างก่อนแยกตามรอบ)\n  ส่งนักเรียน: ' + f.getPublishedUrl() +
+        '\n  แก้ไขฟอร์ม: ' + f.getEditUrl());
+    } catch (e) {
+      out.push('ฟอร์มเดิม: เปิดไม่ได้ (' + e + ')');
+    }
+  }
+  if (!out.length) out.push('ยังไม่มีฟอร์ม ให้รัน createRoundForms() ก่อน');
+  const text = out.join('\n');
+  Logger.log(text);
+  return text;
+}
+
+/** เรียกชื่อเดิมได้เหมือนกัน */
+function showRosterFormLinks() {
+  return showRoundFormLinks();
+}
+
+/* ---------- ตัวช่วย ---------- */
+
+function rfBuildForm_(label, askPortfolio) {
+  const form = FormApp.create(RF.FORM_TITLE + ' (' + label + ')');
   form.setDescription(RF.FORM_DESC);
   form.setConfirmationMessage(RF.CONFIRM_MSG);
   form.setAllowResponseEdits(true);       // แก้ลิงก์ที่วางผิดได้ภายหลัง
@@ -50,6 +136,18 @@ function createRosterForm() {
 
   form.addTextItem()
     .setTitle('โรงเรียน')
+    .setRequired(true);
+
+  // เบอร์โทรใช้ยืนยันตัวตนตอนเข้าคิว (กันชื่อซ้ำ) ระบบซิงก์เฉพาะ 4 ตัวท้ายเข้าไฟล์หลัก
+  // หัวคำถามต้องเป็น "เบอร์โทรศัพท์" ตรงตัว เพราะ Roster.gs หาคอลัมน์จากชื่อนี้
+  const phoneRule = FormApp.createTextValidation()
+    .setHelpText('กรอกเบอร์โทรศัพท์เป็นตัวเลข 9-10 หลัก')
+    .requireTextMatchesPattern('^[0-9 -]{9,12}$')
+    .build();
+  form.addTextItem()
+    .setTitle('เบอร์โทรศัพท์')
+    .setHelpText('ใช้ยืนยันตัวตนตอนเข้าคิวสอบสัมภาษณ์ (ระบบเก็บเฉพาะ 4 ตัวท้ายไว้ใช้ยืนยัน)')
+    .setValidation(phoneRule)
     .setRequired(true);
 
   const urlRule = FormApp.createTextValidation()
@@ -67,78 +165,46 @@ function createRosterForm() {
     .setValidation(urlRule)
     .setRequired(true);
 
-  form.addTextItem()
-    .setTitle('ลิงก์ Portfolio')
-    .setHelpText(linkHelp)
-    .setValidation(urlRule)
-    .setRequired(RF.REQUIRE_PORTFOLIO);
+  if (askPortfolio) {
+    form.addTextItem()
+      .setTitle('ลิงก์ Portfolio')
+      .setHelpText(linkHelp)
+      .setValidation(urlRule)
+      .setRequired(true);
+  }
+  return form;
+}
 
-  form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
-  props.setProperty('ROSTER_FORM_ID', form.getId());
+function rfValidateCode_(code) {
+  if (/[\/\\:?*\[\]]/.test(code)) {
+    throw new Error('รหัสรอบ "' + code + '" มีอักขระที่ใช้เป็นชื่อแท็บไม่ได้ ( / \\ : ? * [ ] ) ใช้ขีดล่างแทน');
+  }
+  if (code.length > 100) {
+    throw new Error('รหัสรอบ "' + code + '" ยาวเกิน 100 ตัวอักษร');
+  }
+}
 
-  // แท็บคำตอบอาจโผล่ช้าเล็กน้อยหลังผูกฟอร์ม ลองรอแล้วเตรียมคอลัมน์ "รอบ"
-  let prep = '';
-  for (let i = 0; i < 5; i++) {
+/** รอให้แท็บคำตอบของฟอร์มใหม่โผล่ในไฟล์ Roster แล้วคืนแท็บนั้น (ไม่พบคืน null) */
+function rfWaitNewTab_(rosterId, beforeIds) {
+  for (let i = 0; i < 6; i++) {
     SpreadsheetApp.flush();
     Utilities.sleep(2000);
-    prep = prepareRosterSheet();
-    if (prep.indexOf('ยังไม่พบ') < 0) break;
+    const fresh = SpreadsheetApp.openById(rosterId).getSheets();
+    for (let j = 0; j < fresh.length; j++) {
+      if (beforeIds.indexOf(fresh[j].getSheetId()) < 0) return fresh[j];
+    }
   }
-
-  const summary =
-    'สร้างฟอร์มแล้ว\n' +
-    'ลิงก์ส่งให้นักเรียน: ' + form.getPublishedUrl() + '\n' +
-    'ลิงก์แก้ไขฟอร์ม: ' + form.getEditUrl() + '\n' +
-    'ไฟล์ Roster: ' + ss.getUrl() + '\n' +
-    prep;
-  Logger.log(summary);
-  return summary;
+  return null;
 }
 
-function prepareRosterSheet() {
-  const id = PropertiesService.getScriptProperties().getProperty('ROSTER_SHEET_ID');
-  if (!id) throw new Error('ยังไม่มี ROSTER_SHEET_ID ให้รัน createRosterForm() ก่อน');
-
-  const ss = SpreadsheetApp.openById(id);
-  const sh = rfFindResponsesTab_(ss);
-  if (!sh) {
-    return 'ยังไม่พบแท็บคำตอบของฟอร์ม (รอสักครู่แล้วรัน prepareRosterSheet() อีกครั้ง)';
+function rfReadRegistry_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('ROUND_FORMS');
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
   }
-
-  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-  let col = head.indexOf('รอบ') + 1;
-  if (!col) {
-    col = sh.getLastColumn() + 1;
-    sh.getRange(1, col).setValue('รอบ').setFontWeight('bold');
-  }
-
-  const codes = rfRoundCodes_();
-  if (codes.length) {
-    const rule = SpreadsheetApp.newDataValidation()
-      .requireValueInList(codes, true)
-      .setAllowInvalid(false)
-      .build();
-    sh.getRange(2, col, 1000, 1).setDataValidation(rule);
-    return 'เตรียมคอลัมน์ "รอบ" แล้ว (ตัวเลือก: ' + codes.join(', ') + ')';
-  }
-  return 'เตรียมคอลัมน์ "รอบ" แล้ว (ยังไม่มีรอบในแท็บ Rounds จึงยังไม่มี dropdown)';
 }
-
-function showRosterFormLinks() {
-  const props = PropertiesService.getScriptProperties();
-  const formId = props.getProperty('ROSTER_FORM_ID');
-  const sheetId = props.getProperty('ROSTER_SHEET_ID');
-  if (!formId) throw new Error('ยังไม่ได้สร้างฟอร์ม ให้รัน createRosterForm() ก่อน');
-  const form = FormApp.openById(formId);
-  const out =
-    'ลิงก์ส่งให้นักเรียน: ' + form.getPublishedUrl() + '\n' +
-    'ลิงก์แก้ไขฟอร์ม: ' + form.getEditUrl() + '\n' +
-    'ไฟล์ Roster: ' + (sheetId ? SpreadsheetApp.openById(sheetId).getUrl() : '-');
-  Logger.log(out);
-  return out;
-}
-
-/* ---------- ตัวช่วย ---------- */
 
 function rfGetOrCreateRoster_() {
   const props = PropertiesService.getScriptProperties();
@@ -177,24 +243,4 @@ function rfSetupEmail_(form) {
     form.setCollectEmail(true);
     Logger.log('ใช้ setCollectEmail(true) แทน: ' + e);
   }
-}
-
-function rfFindResponsesTab_(ss) {
-  const sheets = ss.getSheets();
-  for (let i = 0; i < sheets.length; i++) {
-    const sh = sheets[i];
-    if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) continue;
-    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-    if (head.indexOf('ชื่อ-สกุล') >= 0) return sh;
-  }
-  return null;
-}
-
-function rfRoundCodes_() {
-  const main = SpreadsheetApp.getActive();
-  const tab = main ? main.getSheetByName('Rounds') : null;
-  if (!tab) return [];
-  return tab.getDataRange().getValues().slice(1)
-    .map(function (r) { return String(r[0]).trim(); })
-    .filter(Boolean);
 }

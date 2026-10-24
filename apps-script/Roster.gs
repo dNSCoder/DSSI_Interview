@@ -2,16 +2,19 @@
  * Roster.gs — ซิงก์รายชื่อนักเรียนจากไฟล์ Roster (ที่นักศึกษาช่วยงานดูแล) เข้าแท็บ Students
  * วางเป็นไฟล์แยกในโปรเจกต์ Apps Script ข้าง Code.gs และ Setup.gs
  *
- * ไฟล์ Roster: Google Sheet แยก (เช่น DSSI_Interview_Roster) ระบบหาแท็บที่แถวแรกมีหัวคอลัมน์
- *         "ชื่อ-สกุล" (หรือ "ชื่อ") และ "รอบ" ให้เอง ไม่ขึ้นกับตำแหน่งคอลัมน์
- *         แท็บคำตอบของ Google Form ใช้ได้ (สร้างด้วย RosterForm.gs) ต้องมีคอลัมน์ "รอบ" ที่ผู้ดูแลกรอก
- *         แถวที่ยังไม่กำหนดรอบจะยังไม่ถูกซิงก์
- * ตั้งค่า: Project Settings > Script properties > เพิ่มคีย์ ROSTER_SHEET_ID = ID ของไฟล์ Roster
- *         (ID คือข้อความยาวใน URL ระหว่าง /d/ กับ /edit ห้ามใส่ในโค้ดหรือ repo)
+ * แนวคิด: หนึ่งรอบ = หนึ่งฟอร์ม = หนึ่งแท็บคำตอบในไฟล์ Roster และ "ชื่อแท็บ" คือรหัสรอบ
+ *         (เช่น 27_10_2026_port) ต้องตรงกับรหัสรอบในแท็บ Rounds ของไฟล์หลัก
+ * ไฟล์ Roster: ทุกแท็บที่แถวแรกมีหัวคอลัมน์ "ชื่อ-สกุล" (หรือ "ชื่อ") ถือเป็นแท็บของหนึ่งรอบ
+ *         แท็บที่ไม่มีหัวคอลัมน์นี้ (เช่น แท็บว่าง) ถูกข้าม
+ *         ซิงก์เฉพาะ ชื่อ รอบ และเบอร์โทร 4 ตัวท้าย (จากคอลัมน์ "เบอร์โทรศัพท์") ไว้ยืนยันตัวตนตอนเข้าคิว
+ *         ไม่คัดลอกอีเมล เบอร์เต็ม หรือลิงก์เข้าไฟล์หลัก
+ * ตั้งค่า: Script properties > ROSTER_SHEET_ID = ID ของไฟล์ Roster
+ *         (RosterForm.gs ตั้งให้เองตอนสร้างฟอร์ม ห้ามใส่ในโค้ดหรือ repo)
  * ใช้งาน: เมนู "คิวสัมภาษณ์" > "ซิงก์รายชื่อนักเรียน" หรือรัน installRosterTrigger() หนึ่งครั้ง
  *         เพื่อให้ซิงก์เองทุก 5 นาที
  *
  * กติกา: เพิ่มอย่างเดียว ไม่แก้ ไม่ลบแถวที่มีใน Students (กันนักเรียนที่เข้าคิวอยู่หลุด)
+ *        ข้อยกเว้นเดียว: เติมเบอร์ 4 ตัวท้ายลงช่องที่ว่างของแถวเดิม (แถวที่ซิงก์ไว้ก่อนมีช่องเบอร์)
  */
 
 /** เมนูในชีต โปรเจกต์นี้ต้องมี onOpen ตัวเดียวเท่านั้น (ตัวนี้) */
@@ -59,86 +62,133 @@ function installRosterTrigger() {
 /* ---------- ตัวช่วย ---------- */
 
 function rosterSyncLocked_(rosterId) {
-  const rosterRows = rosterReadRows_(SpreadsheetApp.openById(rosterId));
+  const main = SpreadsheetApp.getActive();
+  const stu = main.getSheetByName('Students');
+  rosterEnsurePhoneColumn_(stu);
+  const rounds = rosterReadRounds_(main);          // { รหัสรอบแบบ normalize: รหัสรอบตามที่พิมพ์ใน Rounds }
+  const tabs = rosterReadTabs_(SpreadsheetApp.openById(rosterId));
 
-  const ss = SpreadsheetApp.getActive();
-  const stu = ss.getSheetByName('Students');
-
-  const rounds = {};
-  ss.getSheetByName('Rounds').getDataRange().getValues().slice(1).forEach(function (r) {
-    if (String(r[0]).trim()) rounds[rosterNorm_(r[0])] = true;
-  });
-
-  // นับชื่อที่มีใน Students แล้ว แยกตามรอบ+ชื่อ
-  const have = {};
-  stu.getDataRange().getValues().slice(1).forEach(function (r) {
-    if (!String(r[1]).trim()) return;
+  // แถวที่มีใน Students แล้ว จัดกลุ่มตามรอบ+ชื่อ
+  const existing = {};
+  stu.getDataRange().getValues().forEach(function (r, i) {
+    if (i === 0 || !String(r[1]).trim()) return;
     const k = rosterKey_(r[2], r[1]);
-    have[k] = (have[k] || 0) + 1;
+    (existing[k] = existing[k] || []).push({ row: i + 1, phone4: rosterPhone4_(r[8]), used: false });
   });
 
-  const need = {};
   const toAdd = [];
+  const fills = [];
+  const lines = [];
   const warns = [];
-  let pending = 0;
 
-  rosterRows.forEach(function (r, i) {
-    const name = rosterClean_(r[0]);
-    const round = String(r[1] == null ? '' : r[1]).trim();
-    const rowNo = i + 2;
-    if (!name && !round) return;
-    if (name && !round) {
-      pending++; // ฟอร์มส่งมาแล้วแต่ผู้ดูแลยังไม่กำหนดรอบ รอซิงก์ครั้งต่อไป
+  tabs.forEach(function (t) {
+    const code = rounds[rosterNorm_(t.tab)];
+    if (!code) {
+      warns.push('แท็บ "' + t.tab + '" ไม่มีในแท็บ Rounds (ข้าม) ตรวจว่ารหัสรอบตรงกับชื่อแท็บ');
       return;
     }
-    if (!name) {
-      warns.push('แถว ' + rowNo + ': มีรอบแต่ไม่มีชื่อ (ข้าม)');
-      return;
+    if (!t.hasPhone) {
+      warns.push('แท็บ "' + t.tab + '" ไม่มีคอลัมน์ "เบอร์โทรศัพท์" (ซิงก์ชื่อได้ แต่ยืนยันด้วยเบอร์ไม่ได้ ' +
+        'ให้เพิ่มช่องเบอร์โทรศัพท์ในฟอร์มของรอบนี้)');
     }
-    if (!rounds[rosterNorm_(round)]) {
-      warns.push('แถว ' + rowNo + ': รอบ "' + round + '" ไม่มีในแท็บ Rounds (ข้าม)');
-      return;
-    }
-    const k = rosterKey_(round, name);
-    need[k] = (need[k] || 0) + 1;
-    if (need[k] > (have[k] || 0)) {
-      toAdd.push(['', name, round, '', '', '', '', '']);
-    }
+
+    let added = 0;
+    t.people.forEach(function (p) {
+      const list = existing[rosterKey_(code, p.name)] || [];
+      let item = null;
+      // 1) แถวเดิมที่ชื่อและเบอร์ท้าย 4 หลักตรงกัน
+      for (let i = 0; i < list.length; i++) {
+        if (!list[i].used && list[i].phone4 === p.phone4) { item = list[i]; break; }
+      }
+      if (item) { item.used = true; return; }
+      // 2) แถวเดิมที่ยังไม่มีเบอร์ (ซิงก์ไว้ก่อนมีช่องเบอร์) ให้เติมเบอร์ลงแถวเดิม ไม่เพิ่มแถวซ้ำ
+      if (p.phone4) {
+        for (let i = 0; i < list.length; i++) {
+          if (!list[i].used && !list[i].phone4) { item = list[i]; break; }
+        }
+        if (item) { item.used = true; fills.push({ row: item.row, phone4: p.phone4 }); return; }
+      }
+      // 3) ยังไม่มีในระบบ เพิ่มแถวใหม่
+      toAdd.push(['', p.name, code, '', '', '', '', '', p.phone4]);
+      added++;
+    });
+    lines.push('- ' + code + ': เพิ่ม ' + added + ' คน (ในแท็บมี ' + t.people.length + ' ชื่อ)');
   });
 
+  fills.forEach(function (f) {
+    stu.getRange(f.row, 9).setNumberFormat('@').setValue(f.phone4);
+  });
   if (toAdd.length) {
-    stu.getRange(stu.getLastRow() + 1, 1, toAdd.length, 8).setValues(toAdd);
+    const start = stu.getLastRow() + 1;
+    stu.getRange(start, 9, toAdd.length, 1).setNumberFormat('@'); // กันเลข 0 นำหน้าหาย
+    stu.getRange(start, 1, toAdd.length, 9).setValues(toAdd);
   }
 
   let msg = 'เพิ่มนักเรียนใหม่ ' + toAdd.length + ' คน';
-  if (pending) msg += '\nยังไม่กำหนดรอบ ' + pending + ' คน (ยังไม่ซิงก์ ใส่รอบในไฟล์ Roster แล้วซิงก์ใหม่)';
-  if (warns.length) {
-    msg += '\nข้อควรตรวจ ' + warns.length + ' รายการ:\n' + warns.slice(0, 20).join('\n');
-    if (warns.length > 20) msg += '\n... และอีก ' + (warns.length - 20) + ' รายการ';
-  }
+  if (fills.length) msg += ' เติมเบอร์ให้แถวเดิม ' + fills.length + ' แถว';
+  if (lines.length) msg += '\n' + lines.join('\n');
+  if (warns.length) msg += '\nข้อควรตรวจ:\n' + warns.join('\n');
   return msg;
 }
 
+/** ให้แท็บ Students มีคอลัมน์ที่ 9 "เบอร์ท้าย 4 หลัก" (เติมให้เองถ้ายังไม่มี) */
+function rosterEnsurePhoneColumn_(stu) {
+  if (stu.getMaxColumns() < 9) stu.insertColumnsAfter(stu.getMaxColumns(), 9 - stu.getMaxColumns());
+  if (!String(stu.getRange(1, 9).getValue()).trim()) {
+    stu.getRange(1, 9).setValue('เบอร์ท้าย 4 หลัก').setFontWeight('bold');
+  }
+}
+
+/** อ่านแท็บ Rounds ในไฟล์หลัก คืน map ของรหัสรอบ (normalize แล้ว) ไปยังรหัสรอบตามที่พิมพ์ */
+function rosterReadRounds_(main) {
+  const tab = main.getSheetByName('Rounds');
+  if (!tab) throw new Error('ไม่พบแท็บ Rounds ในไฟล์หลัก ให้รัน setupV2() ก่อน');
+  const map = {};
+  tab.getDataRange().getValues().slice(1).forEach(function (r) {
+    const code = rosterClean_(r[0]);
+    if (code) map[rosterNorm_(code)] = code;
+  });
+  return map;
+}
+
 /**
- * หาแท็บที่แถวแรกมีหัวคอลัมน์ "ชื่อ-สกุล" (หรือ "ชื่อ") และ "รอบ"
- * คืน [[ชื่อ, รอบ], ...] ทุกแถวใต้หัวตาราง (ลำดับตรงกับแถวในชีต เริ่มที่แถว 2)
+ * คืนรายการ [{tab, hasPhone, people:[{name, phone4}]}] เฉพาะแท็บที่แถวแรกมีหัวคอลัมน์ "ชื่อ-สกุล" (หรือ "ชื่อ")
+ * เบอร์ดึงจากคอลัมน์ "เบอร์โทรศัพท์" (หรือ "เบอร์โทร") เฉพาะ 4 ตัวท้าย
  */
-function rosterReadRows_(ss) {
-  const sheets = ss.getSheets();
-  for (let s = 0; s < sheets.length; s++) {
-    const sh = sheets[s];
-    if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) continue;
+function rosterReadTabs_(ss) {
+  const out = [];
+  ss.getSheets().forEach(function (sh) {
+    if (sh.getLastRow() < 1 || sh.getLastColumn() < 1) return;
     const values = sh.getDataRange().getValues();
     const head = values[0].map(function (h) { return rosterClean_(h); });
     let nameCol = head.indexOf('ชื่อ-สกุล');
     if (nameCol < 0) nameCol = head.indexOf('ชื่อ');
-    const roundCol = head.indexOf('รอบ');
-    if (nameCol >= 0 && roundCol >= 0) {
-      return values.slice(1).map(function (r) { return [r[nameCol], r[roundCol]]; });
-    }
+    if (nameCol < 0) return;
+    let phoneCol = head.indexOf('เบอร์โทรศัพท์');
+    if (phoneCol < 0) phoneCol = head.indexOf('เบอร์โทร');
+
+    const people = values.slice(1)
+      .map(function (r) {
+        return {
+          name: rosterClean_(r[nameCol]),
+          phone4: phoneCol >= 0 ? rosterPhone4_(r[phoneCol]) : ''
+        };
+      })
+      .filter(function (p) { return p.name; });
+    out.push({ tab: sh.getName(), hasPhone: phoneCol >= 0, people: people });
+  });
+  if (!out.length) {
+    throw new Error('ไม่พบแท็บที่มีหัวคอลัมน์ "ชื่อ-สกุล" (หรือ "ชื่อ") ในไฟล์ Roster');
   }
-  throw new Error('ไม่พบแท็บที่มีหัวคอลัมน์ "ชื่อ-สกุล" (หรือ "ชื่อ") และ "รอบ" ในไฟล์ Roster ' +
-    '(ถ้าใช้ฟอร์ม ให้รัน prepareRosterSheet() เพื่อเพิ่มคอลัมน์ "รอบ")');
+  return out;
+}
+
+/** ตัวเลข 4 ตัวท้ายของเบอร์ (ไม่สนขีด ช่องว่าง หรือ +66) ว่างถ้าไม่มีตัวเลข */
+function rosterPhone4_(v) {
+  const d = String(v == null ? '' : v).replace(/\D/g, '');
+  if (!d) return '';
+  const last = d.slice(-4);
+  return last.length < 4 ? ('0000' + last).slice(-4) : last;
 }
 
 function rosterClean_(s) {
