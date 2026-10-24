@@ -208,7 +208,7 @@ function qJoin_(b) {
 /** อ่านอย่างเดียว ไม่ล็อก (แต่บันทึกว่านักเรียนยังอยู่) */
 function qStatus_(b) {
   const ticket = String(b.ticket || '').trim();
-  if (!ticket || ticket.length > 64) return { ok: false, error: 'ไม่พบตั๋ว กรุณาเข้าคิวใหม่' };
+  if (!ticket || ticket.length > 64) return { ok: false, gone: true, error: 'ไม่พบตั๋ว กรุณาเข้าคิวใหม่' };
 
   const ss = SpreadsheetApp.getActive();
   const vals = ss.getSheetByName(Q.STUDENTS).getDataRange().getValues();
@@ -216,7 +216,7 @@ function qStatus_(b) {
   for (let i = 1; i < vals.length; i++) {
     if (String(vals[i][0]).trim() === ticket) { me = i; break; }
   }
-  if (me < 0) return { ok: false, error: 'ไม่พบตั๋ว กรุณาเข้าคิวใหม่' };
+  if (me < 0) return { ok: false, gone: true, error: 'ไม่พบตั๋ว กรุณาเข้าคิวใหม่' };
   qBeat_('s', ticket);
 
   const row = vals[me];
@@ -231,15 +231,17 @@ function qStatus_(b) {
   if (status === Q.S_BUSY) {
     return Object.assign(base, { status: 'busy', teacher: String(row[5]), meet: String(row[6]) });
   }
-  if (status !== Q.S_WAIT) return { ok: false, error: 'ไม่พบตั๋ว กรุณาเข้าคิวใหม่' };
+  if (status !== Q.S_WAIT) return { ok: false, gone: true, error: 'ไม่พบตั๋ว กรุณาเข้าคิวใหม่' };
 
   // รอคิว: นับคนที่รออยู่ข้างหน้าในรอบเดียวกัน
   const myT = row[4] instanceof Date ? row[4].getTime() : 0;
   let ahead = 0;
+  let waiting = 1;   // นับตัวเองด้วย
   for (let i = 1; i < vals.length; i++) {
     if (i === me) continue;
     const r = vals[i];
     if (String(r[3]).trim() !== Q.S_WAIT || qNorm_(r[2]) !== roundKey) continue;
+    waiting++;
     const t = r[4] instanceof Date ? r[4].getTime() : 0;
     if (t < myT || (t === myT && i < me)) ahead++;
   }
@@ -251,7 +253,10 @@ function qStatus_(b) {
     if (!email || qNorm_(state[i][1]) !== roundKey) continue;
     if (String(state[i][2]).trim() === Q.T_FREE && qSeenAge_('t', email) <= Q.TEACHER_STALE_MS) freeTeachers++;
   }
-  return Object.assign(base, { status: 'wait', ahead: ahead, position: ahead + 1, freeTeachers: freeTeachers });
+  return Object.assign(base, {
+    status: 'wait', ahead: ahead, position: ahead + 1,
+    behind: waiting - ahead - 1, waiting: waiting, freeTeachers: freeTeachers
+  });
 }
 
 /* ---------------------------------------------------------------- teacher */
