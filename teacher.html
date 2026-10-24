@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light only">
   <title>สำหรับอาจารย์ · คิวสอบสัมภาษณ์ DSSI</title>
   <link rel="stylesheet" href="css/output.css">
   <script src="js/config.js" defer></script>
@@ -25,6 +26,7 @@
   </header>
 
   <div class="alert-info" role="status" x-show="offline" x-text="S.err.network"></div>
+  <div class="alert-info" role="status" x-show="pollProblem && !offline" x-text="T.pollProblem"></div>
 
   <!-- 3. เข้าสู่ระบบ -->
   <main class="main-grid" x-show="view === 'login'">
@@ -35,13 +37,8 @@
 
     <form class="col-right card" @submit.prevent="login()" novalidate>
       <div>
-        <label class="label" for="t-name" x-text="T.name"></label>
-        <select id="t-name" class="field" x-model="form.name" autocomplete="off">
-          <option value="" x-text="teachersLoaded ? T.namePlaceholder : T.loadingTeachers"></option>
-          <template x-for="n in teachers" :key="n">
-            <option :value="n" x-text="n"></option>
-          </template>
-        </select>
+        <label class="label" for="t-email" x-text="T.email"></label>
+        <input id="t-email" class="field" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" x-model="form.email">
       </div>
       <div>
         <label class="label" for="t-pass" x-text="T.password"></label>
@@ -49,14 +46,20 @@
       </div>
       <div>
         <label class="label" for="t-round" x-text="T.round"></label>
-        <input id="t-round" class="field" type="text" x-model="form.round" autocomplete="off" autocapitalize="characters">
+        <select id="t-round" class="field" x-model="form.round" autocomplete="off">
+          <option value="" x-text="roundsLoaded ? T.roundPlaceholder : T.loadingRounds"></option>
+          <template x-for="r in rounds" :key="r.code">
+            <option :value="r.code" x-text="r.name"></option>
+          </template>
+        </select>
+        <p class="small mt-1" x-show="roundsLoaded && rounds.length === 0" x-text="T.noRounds"></p>
       </div>
       <p class="alert" role="alert" x-show="error" x-text="error"></p>
       <button type="submit" class="btn btn-primary" :disabled="busy" x-text="T.login"></button>
     </form>
   </main>
 
-  <!-- 4. หลังเข้าสู่ระบบ (กำลังสัมภาษณ์ / ว่าง / พัก / ครบรอบ) -->
+  <!-- 4. หลังเข้าสู่ระบบ (กำลังสัมภาษณ์ / ว่าง / พัก / ออฟไลน์ / ครบรอบ) -->
   <main class="main-grid" x-show="view === 'main' && state">
     <template x-if="state">
       <section class="col-left">
@@ -81,8 +84,9 @@
             <div class="small" x-text="T.statWaiting"></div>
           </div>
           <div class="stat">
-            <div class="stat-num" x-text="state.done"></div>
+            <div class="stat-num" x-text="state.doneCount"></div>
             <div class="small" x-text="T.statDone"></div>
+            <div class="small" x-show="mineText" x-text="mineText"></div>
           </div>
         </div>
         <p class="alert" role="alert" x-show="error" x-text="error"></p>
@@ -91,7 +95,13 @@
           <a class="btn btn-secondary" x-show="isBusy" :href="meetHref" :aria-disabled="!meetOk"
              target="_blank" rel="noopener noreferrer" x-text="T.openMeet"></a>
           <button type="button" class="btn btn-primary" x-show="isBusy" @click="act('finish')" :disabled="busy" x-text="T.finish"></button>
-          <button type="button" class="btn btn-primary" x-show="isRest" @click="act('free')" :disabled="busy" x-text="T.free"></button>
+          <button type="button" class="btn btn-secondary" x-show="isBusy && !confirmSkip" @click="confirmSkip = true" :disabled="busy" x-text="T.skip"></button>
+          <div class="flex flex-col gap-3" x-show="isBusy && confirmSkip">
+            <p class="alert" role="alert" x-text="T.skipWarn"></p>
+            <button type="button" class="btn btn-primary" @click="act('skip')" :disabled="busy" x-text="T.skipConfirm"></button>
+            <button type="button" class="btn btn-secondary" @click="confirmSkip = false" :disabled="busy" x-text="T.cancel"></button>
+          </div>
+          <button type="button" class="btn btn-primary" x-show="canFree" @click="act('free')" :disabled="busy" x-text="T.free"></button>
           <button type="button" class="btn btn-secondary" x-show="isFree" @click="act('rest')" :disabled="busy" x-text="T.rest"></button>
         </div>
       </section>
