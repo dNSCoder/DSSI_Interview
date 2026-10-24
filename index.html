@@ -15,7 +15,11 @@
 <body>
 <div class="page" x-data="studentPage" x-cloak>
   <header class="topbar">
-    <img class="logo" src="assets/dssi-logo.png" alt="DSSI">
+    <div class="brand-logos">
+      <img class="logo-sci" src="assets/sci-ubu-logo.png" alt="คณะวิทยาศาสตร์ มหาวิทยาลัยอุบลราชธานี">
+      <img class="logo-dssi" src="assets/dssi-logo.png" alt="DSSI">
+    </div>
+    <p class="brand-title" x-text="S.siteName"></p>
     <a class="btn btn-nav" href="teacher.html" x-text="T.navTeacher"></a>
   </header>
 

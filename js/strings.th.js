@@ -2,6 +2,7 @@
 window.DSSI_STRINGS = {
   course: 'หลักสูตร Data Science and Software Innovation · มหาวิทยาลัยอุบลราชธานี',
   logoAlt: 'DSSI',
+  siteName: 'ระบบคิวสอบสัมภาษณ์ DSSI',
   examinee: 'นักเรียน',
   interviewer: 'อาจารย์',
 
