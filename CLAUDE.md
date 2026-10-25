@@ -33,7 +33,7 @@
 - ใช้ `LockService` ทุกครั้งที่จับคู่หรือเปลี่ยนสถานะ
 - ส่ง POST แบบ `Content-Type: text/plain;charset=utf-8` เพื่อเลี่ยง CORS preflight (Apps Script ไม่รองรับ preflight)
 - ใช้ `textContent` หรือ `x-text` ของ Alpine เสมอ ห้าม `innerHTML` / `x-html` กับข้อมูลจากชีต
-- แสดงปุ่ม Meet ก็ต่อเมื่อลิงก์ตรงกับ `^https:\/\/meet\.google\.com\/[a-z0-9-]+(\?.*)?$` (ตรวจทั้งฝั่ง server และ client)
+- แสดงปุ่ม Meet ก็ต่อเมื่อลิงก์ตรงกับ `^https:\/\/meet\.google\.com\/(?:(?:meet|lookup)\/)?[a-z0-9-]+(\?.*)?$` (ตรวจทั้งฝั่ง server และ client) ยอมให้มี `meet/` หรือ `lookup/` นำหน้ารหัสได้ เพราะ Google สร้างลิงก์รูปแบบ `meet.google.com/meet/xxx-xxxx-xxx` ด้วย โดยโดเมนยังต้องเป็น `meet.google.com` ผ่าน https เท่านั้น
 
 ## สถานะปัจจุบัน
 

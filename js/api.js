@@ -41,7 +41,7 @@
   };
 
   // ตรวจลิงก์ Meet ฝั่ง client (ตรวจซ้ำที่ server ด้วย)
-  var MEET_RE = /^https:\/\/meet\.google\.com\/[a-z0-9-]+(\?.*)?$/;
+  var MEET_RE = /^https:\/\/meet\.google\.com\/(?:(?:meet|lookup)\/)?[a-z0-9-]+(\?.*)?$/;
   window.isMeetUrl = function (s) {
     return typeof s === 'string' && MEET_RE.test(s.trim());
   };
