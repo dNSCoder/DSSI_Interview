@@ -41,7 +41,9 @@ function syncRoster() {
   lock.waitLock(30000);
   let summary;
   try {
-    summary = rosterSyncLocked_(id);
+    const res = rosterSyncLocked_(id);
+    rosterRecordRun_(res);
+    summary = res.text;
   } finally {
     lock.releaseLock();
   }
@@ -60,7 +62,12 @@ function syncRoster() {
  * รอบต่อไปค่อยซิงก์) ไม่โยน error เมื่อยังไม่ตั้ง ROSTER_SHEET_ID เพื่อไม่ให้มีอีเมลแจ้งความผิดพลาดทุกนาที
  */
 function syncRosterAuto() {
-  const id = PropertiesService.getScriptProperties().getProperty('ROSTER_SHEET_ID');
+  const props = PropertiesService.getScriptProperties();
+  // สวิตช์จากหน้า admin: ปิดเมื่อค่าเป็น 'false' เท่านั้น (ไม่ได้ตั้งค่า = เปิด จึงทำงานเหมือนเดิมถ้าไม่ใช้หน้า admin)
+  if (props.getProperty('SYNC_ENABLED') === 'false') {
+    return 'ซิงก์อัตโนมัติปิดอยู่ (สวิตช์ในหน้า admin)';
+  }
+  const id = props.getProperty('ROSTER_SHEET_ID');
   if (!id) {
     Logger.log('ข้าม: ยังไม่ได้ตั้ง ROSTER_SHEET_ID');
     return 'ยังไม่ได้ตั้ง ROSTER_SHEET_ID';
@@ -72,7 +79,9 @@ function syncRosterAuto() {
   }
   let summary;
   try {
-    summary = rosterSyncLocked_(id);
+    const res = rosterSyncLocked_(id);
+    rosterRecordRun_(res);
+    summary = res.text;
   } finally {
     lock.releaseLock();
   }
@@ -107,6 +116,7 @@ function installRosterTriggerFromMenu() {
 
 /* ---------- ตัวช่วย ---------- */
 
+/** ต้องเรียกภายใน lock คืน {text, added, filled} */
 function rosterSyncLocked_(rosterId) {
   const main = SpreadsheetApp.getActive();
   const stu = main.getSheetByName('Students');
@@ -174,7 +184,17 @@ function rosterSyncLocked_(rosterId) {
   if (fills.length) msg += ' เติมเบอร์ให้แถวเดิม ' + fills.length + ' แถว';
   if (lines.length) msg += '\n' + lines.join('\n');
   if (warns.length) msg += '\nข้อควรตรวจ:\n' + warns.join('\n');
-  return msg;
+  return { text: msg, added: toAdd.length, filled: fills.length };
+}
+
+/** จำผลซิงก์ล่าสุดไว้ใน cache (หน้า admin ใช้ดูว่าซิงก์ทำงานอยู่ไหม) เฉพาะตัวเลข ไม่มีชื่อ */
+function rosterRecordRun_(res) {
+  try {
+    CacheService.getScriptCache().put('roster_last',
+      JSON.stringify({ t: Date.now(), added: res.added, filled: res.filled }), 21600);
+  } catch (e) {
+    Logger.log('บันทึกผลซิงก์ล่าสุดไม่สำเร็จ: ' + e);
+  }
 }
 
 function removeRosterTriggers_() {

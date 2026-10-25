@@ -38,6 +38,9 @@ const Q = {
   // นักเรียนที่ "รอ" แต่เงียบเกินเวลานี้ จะถูกข้าม ตั้งไว้ 20 นาที เพราะมือถือหยุดโพลล์ตอนปิดจอหรือสลับแอป
   STUDENT_STALE_MS: 1200000,
 
+  ADMIN_TTL: 7200,                     // token ผู้ดูแล 2 ชั่วโมง
+  ADMIN_SYNC_GAP_S: 10,                // ปุ่มซิงก์ทันทีของ admin ห่างกันอย่างน้อยกี่วินาที
+
   MAX_FAILS: 5,                        // ลองผิดได้กี่ครั้ง
   FAIL_WINDOW_S: 600,                  // ภายในกี่วินาที (แล้วล็อกชั่วคราวเท่ากัน)
   JOIN_PER_MIN: 120,                   // จำนวน join รวมทั้งระบบต่อนาที
@@ -64,6 +67,12 @@ function doPost(e) {
       case 'join': return qOut_(qJoin_(b));
       case 'status': return qOut_(qStatus_(b));
       case 'teacherLogin': return qOut_(qTeacherLogin_(b));
+      case 'adminLogin': return qOut_(qAdminLogin_(b));
+      case 'adminState':
+      case 'adminSetSync':
+      case 'adminSync':
+      case 'adminLogout':
+        return qOut_(qAdminAction_(b));
       case 'state':
       case 'free':
       case 'rest':
@@ -383,6 +392,131 @@ function qTeacherState_(email) {
     waiting: waiting,
     doneCount: done,
     myDoneCount: myDone
+  };
+}
+
+/* ---------------------------------------------------------------- admin */
+
+/**
+ * ผู้ดูแลล็อกอินด้วยบัญชีในแท็บ Teachers (อีเมล + รหัสผ่านเดิม) แต่ต้องเป็นอีเมลที่ตรงกับ Script property ADMIN_EMAIL เท่านั้น
+ * (ตั้งโดยคนที่แก้ Apps Script ได้ ผู้มีสิทธิ์แก้ชีตตั้งตัวเองเป็นผู้ดูแลไม่ได้) ไม่ได้ตั้ง ADMIN_EMAIL = ปิดหน้า admin
+ * ตอบข้อความเดียวกันทุกกรณีที่ไม่ผ่าน และใช้ตัวล็อกรหัสผิดแบบเดียวกับอาจารย์
+ */
+function qAdminLogin_(b) {
+  const BAD = { ok: false, error: 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' };
+  const email = qNorm_(b.email);
+  const password = String(b.password == null ? '' : b.password).trim();
+  if (!email || email.length > 200 || !password || password.length > 200) return BAD;
+  const failKey = 'af_' + qHash_(email);
+  if (qCount_(failKey) >= Q.MAX_FAILS) {
+    return { ok: false, error: 'ลองหลายครั้งเกินไป กรุณารอประมาณ 10 นาทีแล้วลองใหม่' };
+  }
+
+  return qWithLock_(function () {
+    const adminEmail = qNorm_(PropertiesService.getScriptProperties().getProperty('ADMIN_EMAIL'));
+    const teacher = qFindTeacher_(email);
+    const passOk = qSafeEq_(teacher ? teacher.password : '\u0000', password) && !!teacher;
+    const isAdmin = !!adminEmail && qSafeEq_(adminEmail, email);
+    if (!(passOk && isAdmin)) {
+      qCountAdd_(failKey);
+      return BAD;
+    }
+    CacheService.getScriptCache().remove(failKey);
+    const token = Utilities.getUuid();
+    CacheService.getScriptCache().put('adm_' + token, JSON.stringify({ email: email }), Q.ADMIN_TTL);
+    return { ok: true, token: token, state: qAdminState_() };
+  });
+}
+
+function qAdminAction_(b) {
+  const cache = CacheService.getScriptCache();
+  const token = String(b.token || '');
+  if (!token || !cache.get('adm_' + token)) {
+    return { ok: false, auth: true, error: 'หมดเวลาการเข้าสู่ระบบ กรุณาเข้าสู่ระบบใหม่' };
+  }
+  const props = PropertiesService.getScriptProperties();
+
+  switch (b.action) {
+    case 'adminLogout':
+      cache.remove('adm_' + token);
+      return { ok: true };
+
+    case 'adminSetSync':
+      // สวิตช์ซิงก์อัตโนมัติ: แค่สลับค่า ไม่สร้างหรือลบ trigger (syncRosterAuto เช็กค่านี้เอง)
+      props.setProperty('SYNC_ENABLED', b.enabled === true ? 'true' : 'false');
+      return { ok: true, state: qAdminState_() };
+
+    case 'adminSync': {
+      const id = props.getProperty('ROSTER_SHEET_ID');
+      if (!id) return { ok: false, error: 'ยังไม่ได้ตั้ง ROSTER_SHEET_ID ใน Script properties' };
+      if (cache.get('adm_sync_gap')) return { ok: false, error: 'เพิ่งซิงก์ไป รอสักครู่แล้วลองใหม่' };
+      cache.put('adm_sync_gap', '1', Q.ADMIN_SYNC_GAP_S);
+      return qWithLock_(function () {
+        try {
+          const res = rosterSyncLocked_(id);
+          rosterRecordRun_(res);
+          return { ok: true, added: res.added, filled: res.filled, state: qAdminState_() };
+        } catch (err) {
+          Logger.log('ERROR sync: ' + (err && err.stack ? err.stack : err));
+          return { ok: false, error: 'ซิงก์ไม่สำเร็จ ดูรายละเอียดใน Executions ของ Apps Script' };
+        }
+      });
+    }
+
+    default: // adminState
+      return { ok: true, state: qAdminState_() };
+  }
+}
+
+/** ภาพรวมสำหรับหน้า admin: ไม่มีชื่อหรือเบอร์นักเรียน มีแต่ตัวเลขต่อรอบ และสถานะอาจารย์ */
+function qAdminState_() {
+  const ss = SpreadsheetApp.getActive();
+  const stats = {};
+  ss.getSheetByName(Q.STUDENTS).getDataRange().getValues().slice(1).forEach(function (r) {
+    const key = qNorm_(r[2]);
+    if (!key) return;
+    const s = stats[key] || (stats[key] = { waiting: 0, busy: 0, done: 0, skipped: 0 });
+    const st = String(r[3]).trim();
+    if (st === Q.S_WAIT) s.waiting++;
+    else if (st === Q.S_BUSY) s.busy++;
+    else if (st === Q.S_DONE) s.done++;
+    else if (st === Q.S_SKIP) s.skipped++;
+  });
+
+  const rounds = qReadRoundsList_().map(function (r) {
+    const s = stats[r.key] || { waiting: 0, busy: 0, done: 0, skipped: 0 };
+    return { code: r.code, name: r.label, open: r.open, waiting: s.waiting, busy: s.busy, done: s.done, skipped: s.skipped };
+  });
+
+  const names = qTeacherNames_();
+  const rmap = qRoundsMap_();
+  const teachers = ss.getSheetByName(Q.STATE).getDataRange().getValues().slice(1)
+    .filter(function (r) { return qNorm_(r[0]); })
+    .map(function (r) {
+      const email = qNorm_(r[0]);
+      const age = qSeenAge_('t', email);
+      const rd = rmap[qNorm_(r[1])];
+      return {
+        name: names[email] || email,
+        status: String(r[2]).trim() || Q.T_OFF,
+        round: rd ? rd.label : String(r[1]),
+        seenSec: age === Infinity ? null : Math.round(age / 1000)
+      };
+    });
+
+  const props = PropertiesService.getScriptProperties();
+  let last = null;
+  try { last = JSON.parse(CacheService.getScriptCache().get('roster_last') || 'null'); } catch (e) { last = null; }
+  return {
+    rounds: rounds,
+    teachers: teachers,
+    sync: {
+      enabled: props.getProperty('SYNC_ENABLED') !== 'false',
+      hasRoster: !!props.getProperty('ROSTER_SHEET_ID'),
+      lastAgeSec: last ? Math.round((Date.now() - last.t) / 1000) : null,
+      lastAdded: last ? last.added : null,
+      lastFilled: last ? last.filled : null
+    }
   };
 }
 
