@@ -10,8 +10,11 @@
  *         ไม่คัดลอกอีเมล เบอร์เต็ม หรือลิงก์เข้าไฟล์หลัก
  * ตั้งค่า: Script properties > ROSTER_SHEET_ID = ID ของไฟล์ Roster
  *         (RosterForm.gs ตั้งให้เองตอนสร้างฟอร์ม ห้ามใส่ในโค้ดหรือ repo)
- * ใช้งาน: เมนู "คิวสัมภาษณ์" > "ซิงก์รายชื่อนักเรียน" หรือรัน installRosterTrigger() หนึ่งครั้ง
- *         เพื่อให้ซิงก์เองทุก 5 นาที
+ * ใช้งาน: เมนู "คิวสัมภาษณ์" > "ซิงก์รายชื่อนักเรียนทันที" (ปุ่มซิงก์เอง) หรือ "ตั้งซิงก์อัตโนมัติ (ทุก 1 นาที)"
+ *         หรือรัน installRosterTrigger() หนึ่งครั้ง (RosterForm.gs เรียกให้เองตอนสร้างฟอร์ม)
+ *         ถ้าตั้งไว้แบบเดิม (ทุก 5 นาที) ให้รัน installRosterTrigger() ซ้ำ จะแทนที่ด้วยทุก 1 นาที
+ *         ซิงก์ทุก 1 นาทีใช้เวลารันของ trigger วันละราว 1 ชั่วโมงขึ้นไป (โควตา trigger: บัญชีทั่วไป 90 นาที/วัน
+ *         บัญชี Workspace 6 ชั่วโมง/วัน) ควรปิดด้วยเมนู "ปิดซิงก์อัตโนมัติ" เมื่อไม่ใช้
  *
  * กติกา: เพิ่มอย่างเดียว ไม่แก้ ไม่ลบแถวที่มีใน Students (กันนักเรียนที่เข้าคิวอยู่หลุด)
  *        ข้อยกเว้นเดียว: เติมเบอร์ 4 ตัวท้ายลงช่องที่ว่างของแถวเดิม (แถวที่ซิงก์ไว้ก่อนมีช่องเบอร์)
@@ -21,7 +24,10 @@
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('คิวสัมภาษณ์')
-    .addItem('ซิงก์รายชื่อนักเรียน', 'syncRoster')
+    .addItem('ซิงก์รายชื่อนักเรียนทันที', 'syncRoster')
+    .addSeparator()
+    .addItem('ตั้งซิงก์อัตโนมัติ (ทุก 1 นาที)', 'installRosterTriggerFromMenu')
+    .addItem('ปิดซิงก์อัตโนมัติ', 'removeRosterTrigger')
     .addToUi();
 }
 
@@ -49,14 +55,54 @@ function syncRoster() {
   return summary;
 }
 
-/** ตั้งให้ซิงก์เองทุก 5 นาที รันครั้งเดียว (รันซ้ำไม่สร้างตัวซ้ำ) */
+/**
+ * ฟังก์ชันสำหรับ trigger: เหมือน syncRoster แต่ไม่รอ lock นาน (ถ้าตัวจัดคิวกำลังใช้ lock อยู่ ข้ามรอบนี้ไป
+ * รอบต่อไปค่อยซิงก์) ไม่โยน error เมื่อยังไม่ตั้ง ROSTER_SHEET_ID เพื่อไม่ให้มีอีเมลแจ้งความผิดพลาดทุกนาที
+ */
+function syncRosterAuto() {
+  const id = PropertiesService.getScriptProperties().getProperty('ROSTER_SHEET_ID');
+  if (!id) {
+    Logger.log('ข้าม: ยังไม่ได้ตั้ง ROSTER_SHEET_ID');
+    return 'ยังไม่ได้ตั้ง ROSTER_SHEET_ID';
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    Logger.log('ข้ามรอบนี้: ระบบกำลังยุ่ง จะซิงก์ใหม่รอบหน้า');
+    return 'ข้ามรอบนี้ (ระบบกำลังยุ่ง)';
+  }
+  let summary;
+  try {
+    summary = rosterSyncLocked_(id);
+  } finally {
+    lock.releaseLock();
+  }
+  Logger.log(summary);
+  return summary;
+}
+
+/**
+ * ตั้งให้ซิงก์เองทุก 1 นาที รันซ้ำได้ (ลบ trigger ซิงก์เดิมทั้งแบบเก่าและใหม่ แล้วตั้งใหม่ตัวเดียว
+ * จึงใช้เปลี่ยนจากทุก 5 นาทีเป็นทุก 1 นาทีได้ด้วย)
+ */
 function installRosterTrigger() {
-  const exists = ScriptApp.getProjectTriggers().some(function (t) {
-    return t.getHandlerFunction() === 'syncRoster';
-  });
-  if (exists) return 'มี trigger ซิงก์อยู่แล้ว';
-  ScriptApp.newTrigger('syncRoster').timeBased().everyMinutes(5).create();
-  return 'ตั้ง trigger ซิงก์ทุก 5 นาทีแล้ว';
+  removeRosterTriggers_();
+  ScriptApp.newTrigger('syncRosterAuto').timeBased().everyMinutes(1).create();
+  return 'ตั้ง trigger ซิงก์ทุก 1 นาทีแล้ว';
+}
+
+/** ปิดซิงก์อัตโนมัติ (ลบ trigger ซิงก์ทั้งหมด) */
+function removeRosterTrigger() {
+  const n = removeRosterTriggers_();
+  const msg = n ? 'ปิดซิงก์อัตโนมัติแล้ว (ลบ ' + n + ' trigger)' : 'ไม่มี trigger ซิงก์อยู่';
+  rosterAlert_('ซิงก์อัตโนมัติ', msg);
+  return msg;
+}
+
+/** สำหรับเมนู: ตั้งซิงก์อัตโนมัติแล้วแจ้งผลในหน้าต่าง */
+function installRosterTriggerFromMenu() {
+  const msg = installRosterTrigger();
+  rosterAlert_('ซิงก์อัตโนมัติ', msg);
+  return msg;
 }
 
 /* ---------- ตัวช่วย ---------- */
@@ -129,6 +175,26 @@ function rosterSyncLocked_(rosterId) {
   if (lines.length) msg += '\n' + lines.join('\n');
   if (warns.length) msg += '\nข้อควรตรวจ:\n' + warns.join('\n');
   return msg;
+}
+
+function removeRosterTriggers_() {
+  let n = 0;
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    const h = t.getHandlerFunction();
+    if (h === 'syncRoster' || h === 'syncRosterAuto') {
+      ScriptApp.deleteTrigger(t);
+      n++;
+    }
+  });
+  return n;
+}
+
+function rosterAlert_(title, msg) {
+  try {
+    SpreadsheetApp.getUi().alert(title, msg, SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {
+    // รันจากตัวแก้ไขหรือ trigger ไม่มีหน้าต่าง UI
+  }
 }
 
 /** ให้แท็บ Students มีคอลัมน์ที่ 9 "เบอร์ท้าย 4 หลัก" (เติมให้เองถ้ายังไม่มี) */

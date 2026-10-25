@@ -9,6 +9,9 @@
  *      C เปิดรับ, D ถาม Portfolio (ติ๊กถ้ารอบนี้ต้องกรอกลิงก์ Portfolio) ปล่อย E ว่างไว้
  *   2. รัน createRoundForms() จะสร้างฟอร์มให้ทุกแถวที่ช่อง E ยังว่าง เปลี่ยนชื่อแท็บคำตอบเป็นรหัสรอบ
  *      และเขียนลิงก์ฟอร์ม (ส่งให้นักเรียน) ลงช่อง E ให้เอง รันซ้ำได้ ไม่สร้างฟอร์มซ้ำให้แถวที่มีลิงก์แล้ว
+ *      และตั้งให้ซิงก์รายชื่ออัตโนมัติทุก 1 นาทีให้ด้วย (installRosterTrigger ใน Roster.gs ซึ่งแทนที่ trigger เดิมเสมอ)
+ *      ครั้งแรกจะขอสิทธิ์เพิ่มสำหรับตั้งทริกเกอร์ ถ้าไม่ต้องการซิงก์อัตโนมัติ ใช้เมนู "คิวสัมภาษณ์ > ปิดซิงก์อัตโนมัติ"
+ *      (หรือลบทริกเกอร์ syncRosterAuto ในแถบ "ทริกเกอร์")
  *   3. showRoundFormLinks() แสดงลิงก์ส่งนักเรียนและลิงก์แก้ไขของทุกฟอร์ม
  *
  * รหัสรอบห้ามมีอักขระ / \ : ? * [ ] และยาวไม่เกิน 100 ตัวอักษร (เป็นชื่อแท็บของ Google Sheets)
@@ -78,9 +81,19 @@ function createRoundForms() {
   }
 
   props.setProperty('ROUND_FORMS', JSON.stringify(registry));
+
+  // ตั้งซิงก์รายชื่ออัตโนมัติทุก 1 นาที (รันซ้ำไม่สร้างตัวซ้ำ) ถ้าตั้งไม่สำเร็จ ฟอร์มที่สร้างแล้วไม่เสียหาย
+  let syncNote;
+  try {
+    syncNote = installRosterTrigger();
+  } catch (e) {
+    syncNote = 'ตั้งซิงก์อัตโนมัติไม่สำเร็จ (' + e + ') ให้รัน installRosterTrigger() เอง';
+  }
+
   const summary = 'สร้างฟอร์มใหม่ ' + made + ' ฟอร์ม' +
     (notes.length ? '\n' + notes.join('\n') : '') +
-    '\nดูลิงก์ในช่อง E ของแท็บ Rounds หรือรัน showRoundFormLinks()';
+    '\nดูลิงก์ในช่อง E ของแท็บ Rounds หรือรัน showRoundFormLinks()' +
+    '\nซิงก์รายชื่อ: ' + syncNote;
   Logger.log(summary);
   return summary;
 }
