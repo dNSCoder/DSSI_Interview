@@ -117,4 +117,61 @@ window.DSSI_STRINGS = {
     logout: 'ออกจากระบบ',
     pollProblem: 'อ่านสถานะไม่ได้ชั่วคราว กำลังลองใหม่...',
   },
+
+  admin: {
+    navTeacher: 'หน้าอาจารย์',
+    // login
+    loginTop: 'สำหรับ',
+    loginGrad: 'ผู้ดูแล',
+    loginLead: 'กรอกอีเมลและรหัสผ่านของบัญชีผู้ดูแล',
+    email: 'อีเมล',
+    password: 'รหัสผ่าน',
+    login: 'เข้าสู่ระบบ',
+    needLogin: 'กรอกอีเมลและรหัสผ่านให้ครบ',
+    logout: 'ออกจากระบบ',
+    // หลังล็อกอิน
+    badge: 'ภาพรวมระบบ',
+    headTop: 'ภาพรวม',
+    headGrad: 'วันสอบ',
+    lead: 'หน้านี้อัปเดตเอง ไม่แสดงชื่อหรือเบอร์นักเรียน',
+    pollProblem: 'อ่านข้อมูลไม่ได้ชั่วคราว กำลังลองใหม่...',
+    // ซิงก์รายชื่อ
+    syncTitle: 'ซิงก์รายชื่อนักเรียน',
+    syncOn: 'ซิงก์อัตโนมัติ: เปิด',
+    syncOff: 'ซิงก์อัตโนมัติ: ปิด',
+    syncNever: 'ยังไม่เห็นการซิงก์ในช่วงหกชั่วโมงที่ผ่านมา ตรวจว่ามี trigger syncRosterAuto หรือไม่',
+    syncLast: function (sec, added, filled) {
+      var when = sec < 60 ? sec + ' วินาที' : Math.round(sec / 60) + ' นาที';
+      var what = 'เพิ่ม ' + added + ' คน';
+      if (filled) what += ' เติมเบอร์ ' + filled + ' แถว';
+      return 'ซิงก์ล่าสุดเมื่อ ' + when + 'ที่แล้ว (' + what + ')';
+    },
+    noRoster: 'ยังไม่ได้ตั้ง ROSTER_SHEET_ID ใน Script properties',
+    turnOn: 'เปิดซิงก์อัตโนมัติ',
+    turnOff: 'ปิดซิงก์อัตโนมัติ',
+    syncNow: 'ซิงก์ทันที',
+    syncDone: function (added, filled) {
+      if (!added && !filled) return 'ซิงก์แล้ว ไม่มีรายชื่อใหม่';
+      var t = 'ซิงก์แล้ว เพิ่มนักเรียนใหม่ ' + added + ' คน';
+      if (filled) t += ' เติมเบอร์ให้แถวเดิม ' + filled + ' แถว';
+      return t;
+    },
+    // รอบ
+    roundsTitle: 'รอบสอบ',
+    noRounds: 'ยังไม่มีรอบในแท็บ Rounds',
+    open: 'เปิดรับ',
+    closed: 'ปิดรับ',
+    waiting: 'รอ',
+    busy: 'กำลังสัมภาษณ์',
+    done: 'เสร็จ',
+    skipped: 'ถูกข้าม',
+    // อาจารย์
+    teachersTitle: 'อาจารย์',
+    noTeachers: 'ยังไม่มีอาจารย์เข้าสู่ระบบ',
+    seen: function (sec) {
+      if (sec === null) return 'ไม่เห็นสัญญาณ';
+      if (sec < 60) return 'ล่าสุด ' + sec + ' วินาทีที่แล้ว';
+      return 'ล่าสุด ' + Math.round(sec / 60) + ' นาทีที่แล้ว';
+    },
+  },
 };

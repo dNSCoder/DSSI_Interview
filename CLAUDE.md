@@ -47,6 +47,8 @@
 - ฝั่งรายชื่อ (v2) ตั้งค่าแล้ว: ไฟล์ Roster, Google Form ฟอร์มแรก (สร้างก่อนแยกตามรอบ), สคริปต์ซิงก์ ตรวจแล้วว่าโปรเจกต์ผูกกับชีตหลัก ตั้ง `ROSTER_SHEET_ID` และ `ROSTER_FORM_ID` แล้ว และอ่านไฟล์ Roster ได้ **สคริปต์ชุดล่าสุดเปลี่ยนเป็นหนึ่งฟอร์มต่อรอบ ยังไม่ได้วางและทดสอบ**
 - แท็บ `Students` ในชีตหลักมีหัวตารางตามโครง v2 (ยืนยันจากผลตรวจแล้ว ส่วนแท็บอื่นยังไม่ได้ยืนยัน)
 
+- หน้าผู้ดูแล `admin.html` + `js/admin.js` + action `admin*` ใน `Code.gs` (ดูหัวข้อ "หน้าผู้ดูแล") ทดสอบกับ mock API 19 ข้อผ่าน **ยังไม่ได้ลองกับ Apps Script จริง** ต้องตั้ง `ADMIN_EMAIL` และเพิ่มแถวผู้ดูแลใน `Teachers` ก่อนใช้
+
 **ยังไม่ได้ทำ**
 - ทดสอบกับ Apps Script และชีตจริงตามหัวข้อ "เช็กลิสต์ทดสอบ" (หน้าเว็บทดสอบกับ mock เท่านั้น)
 - ทดสอบโหลด: `qDispatch_` อ่าน heartbeat ของนักเรียนจาก cache ทีละคนภายใน lock ทุกครั้งที่อาจารย์โพลล์ ถ้ามีคนรอเยอะอาจช้า ควรเปลี่ยนเป็น `getAll` ถ้าทดสอบแล้วช้า
@@ -98,13 +100,14 @@
 ├─ CLAUDE.md                 ไฟล์นี้ (ไฟล์เดียว)
 ├─ index.html                หน้านักเรียน
 ├─ teacher.html              หน้าอาจารย์
+├─ admin.html                หน้าผู้ดูแล (ไม่มีลิงก์จากหน้าอื่น ต้องรู้ URL: เปิด/ปิดซิงก์ ซิงก์ทันที ดูสถานะ)
 ├─ assets/                   sci-ubu-logo.png (โลโก้คณะวิทยาศาสตร์), dssi-logo.png (โลโก้ DSSI)
 ├─ docs/design/              ภาพหน้าจอดีไซน์ (ยังไม่มีโฟลเดอร์นี้ สร้างเมื่อมีภาพ)
 ├─ css/input.css, css/output.css   Tailwind (output.css ผล build commit ไว้)
 ├─ tailwind.config.js, build-css.ps1, tools/   ชุด build (ไบนารี Tailwind CLI ใน tools/ ไม่ commit)
 ├─ fonts/                    woff2
 ├─ vendor/alpine.min.js
-├─ js/                       config.js (API_URL), api.js, strings.th.js, student.js, teacher.js
+├─ js/                       config.js (API_URL), api.js, strings.th.js, student.js, teacher.js, admin.js
 └─ apps-script/              สำเนาของสคริปต์ที่รันจริงใน Apps Script
    ├─ Code.gs                backend v2 ที่หน้าเว็บเรียก (ให้มาแล้ว ปรับเมื่อพบข้อผิดพลาดหรือต้องเพิ่ม field เท่านั้น)
    ├─ Setup.gs               สร้างแท็บ (ให้มาแล้ว ห้ามเขียนทับ)
@@ -266,6 +269,16 @@ A ตั๋ว | B ชื่อ | C รอบ | D สถานะ | E เวล�
 - `state` = `{name, email, round, roundName, status, meet, student:{name}|null, waiting, doneCount, myDoneCount}` (`doneCount` นับทั้งรอบ `myDoneCount` นับของอาจารย์คนนั้น)
 
 ห้ามส่งรายชื่ออาจารย์ รหัสผ่าน หรือรายชื่อนักเรียนทั้งหมดกลับไปทางสาธารณะ
+
+### หน้าผู้ดูแล (`admin.html`)
+
+- **ใครเข้าได้:** บัญชีเดียว คือแถวในแท็บ `Teachers` (ชื่อ, อีเมล, รหัสผ่านตามปกติ) ที่อีเมล **ตรงกับ Script property `ADMIN_EMAIL`** เท่านั้น (ตั้งโดยคนที่แก้ Apps Script ได้ ผู้มีสิทธิ์แก้ชีตตั้งตัวเองเป็นผู้ดูแลไม่ได้ ห้ามใส่อีเมลนี้ในโค้ดหรือ repo) ไม่ได้ตั้ง `ADMIN_EMAIL` = ปิดหน้านี้ ผิดทุกกรณีตอบข้อความเดียวกัน และใช้ตัวล็อกรหัสผิด 5 ครั้ง/10 นาทีแบบเดียวกับอาจารย์
+- **token แยกจากอาจารย์** (เก็บ `adm_` ใน cache อายุ 2 ชั่วโมง) อาจารย์เรียก action ผู้ดูแลไม่ได้ และผู้ดูแลเรียก action อาจารย์ด้วย token นี้ไม่ได้
+- **POST (ผู้ดูแล):** `{action:'adminLogin', email, password}` → `{ok, token, state}` / ต่อไปนี้ต้องแนบ `token`: `adminState` | `adminSetSync {enabled}` | `adminSync` | `adminLogout`
+- `state` = `{rounds:[{code,name,open,waiting,busy,done,skipped}], teachers:[{name,status,round,seenSec}], sync:{enabled,hasRoster,lastAgeSec,lastAdded,lastFilled}}` ไม่มีชื่อหรือเบอร์นักเรียน มีแต่ตัวเลข
+- **สวิตช์ซิงก์อัตโนมัติ** ไม่สร้างหรือลบ trigger (web app จึงไม่ต้องมีสิทธิ์จัดการ trigger) เพียงสลับ Script property `SYNC_ENABLED` ที่ `syncRosterAuto()` เช็กก่อนทำงาน ปิดเมื่อค่าเป็น `'false'` เท่านั้น ไม่ได้ตั้งค่า = เปิด จึงทำงานเหมือนเดิมถ้าไม่ใช้หน้า admin trigger `syncRosterAuto` ยังต้องตั้งไว้ตามปกติ (เมนูหรือ `installRosterTrigger()`)
+- **ปุ่มซิงก์ทันที** ห่างกันอย่างน้อย 10 วินาที ทำงานแม้สวิตช์ปิดอยู่ ตอบกลับเฉพาะตัวเลข (เพิ่มกี่คน เติมเบอร์กี่แถว) ไม่ส่งชื่อหรือคำเตือนของไฟล์ Roster
+- `lastAgeSec` มาจาก cache (`roster_last`) ถ้าเป็น null นานแสดงว่า trigger ไม่ทำงานหรือยังไม่ได้ตั้ง
 
 ## ความปลอดภัยเพิ่มเติม (ลำดับความสำคัญ)
 

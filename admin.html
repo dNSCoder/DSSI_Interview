@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="light only">
+  <title>ผู้ดูแล · คิวสอบสัมภาษณ์ DSSI</title>
+  <link rel="stylesheet" href="css/output.css">
+  <script src="js/config.js" defer></script>
+  <script src="js/strings.th.js" defer></script>
+  <script src="js/api.js" defer></script>
+  <script src="js/admin.js" defer></script>
+  <script src="vendor/alpine.min.js" defer></script>
+</head>
+<body>
+<div class="page" x-data="adminPage" x-cloak>
+  <header class="topbar">
+    <div class="brand-logos">
+      <img class="logo-sci" width="44" height="44" src="assets/sci-ubu-logo.png" alt="คณะวิทยาศาสตร์ มหาวิทยาลัยอุบลราชธานี">
+      <img class="logo-dssi" width="88" height="44" src="assets/dssi-logo.png" alt="DSSI">
+    </div>
+    <p class="brand-title" x-text="S.siteName"></p>
+    <a class="btn btn-nav" href="teacher.html" x-show="view === 'login'" x-text="T.navTeacher"></a>
+    <button type="button" class="btn btn-nav" x-show="view === 'main'" @click="logout()" :disabled="busy" x-text="T.logout"></button>
+  </header>
+
+  <div class="alert-info" role="status" x-show="offline" x-text="S.err.network"></div>
+  <div class="alert-info" role="status" x-show="pollProblem && !offline" x-text="T.pollProblem"></div>
+
+  <!-- เข้าสู่ระบบ -->
+  <main class="main-grid" x-show="view === 'login'">
+    <section class="col-left">
+      <h1 class="heading-xl"><span x-text="T.loginTop"></span><br><span class="grad-text" x-text="T.loginGrad"></span></h1>
+      <p class="lead" x-text="T.loginLead"></p>
+    </section>
+    <form class="col-right card" @submit.prevent="login()" novalidate>
+      <div>
+        <label class="label" for="a-email" x-text="T.email"></label>
+        <input id="a-email" class="field" type="email" inputmode="email" autocomplete="username" autocapitalize="none" spellcheck="false" x-model="form.email">
+      </div>
+      <div>
+        <label class="label" for="a-pass" x-text="T.password"></label>
+        <input id="a-pass" class="field" type="password" autocomplete="current-password" x-model="form.password">
+      </div>
+      <p class="alert" role="alert" x-show="error" x-text="error"></p>
+      <button type="submit" class="btn btn-primary" :disabled="busy" x-text="T.login"></button>
+    </form>
+  </main>
+
+  <!-- ภาพรวม -->
+  <main class="flex flex-1 flex-col gap-8 py-6 md:py-12" x-show="view === 'main' && state">
+    <template x-if="state">
+      <div class="flex flex-col gap-8">
+        <section class="flex flex-col items-start gap-4">
+          <span class="badge"><span class="dot" :class="sync.enabled ? 'dot-go' : 'dot-rest'"></span><span x-text="T.badge"></span></span>
+          <h1 class="heading-lg"><span x-text="T.headTop"></span> <span class="grad-text" x-text="T.headGrad"></span></h1>
+          <p class="lead" x-text="T.lead"></p>
+        </section>
+
+        <div class="grid gap-6 md:grid-cols-2">
+          <!-- ซิงก์รายชื่อ -->
+          <section class="card md:max-w-none flex flex-col gap-4">
+            <h2 class="font-heading text-2xl font-bold" x-text="T.syncTitle"></h2>
+            <p class="flex items-center gap-2 font-semibold">
+              <span class="dot" :class="sync.enabled ? 'dot-go' : 'dot-rest'"></span>
+              <span x-text="sync.enabled ? T.syncOn : T.syncOff"></span>
+            </p>
+            <p class="small" x-text="syncLine"></p>
+            <p class="alert-info" role="status" x-show="notice" x-text="notice"></p>
+            <p class="alert" role="alert" x-show="error" x-text="error"></p>
+            <div class="flex flex-col gap-3">
+              <button type="button" class="btn btn-primary" @click="syncNow()" :disabled="busy || !sync.hasRoster" x-text="T.syncNow"></button>
+              <button type="button" class="btn btn-secondary" @click="toggleSync()" :disabled="busy" x-text="sync.enabled ? T.turnOff : T.turnOn"></button>
+            </div>
+          </section>
+
+          <!-- อาจารย์ -->
+          <section class="card md:max-w-none flex flex-col gap-4">
+            <h2 class="font-heading text-2xl font-bold" x-text="T.teachersTitle"></h2>
+            <p class="small" x-show="state.teachers.length === 0" x-text="T.noTeachers"></p>
+            <ul class="flex flex-col gap-3">
+              <template x-for="(t, i) in state.teachers" :key="i">
+                <li class="stat flex flex-col gap-1">
+                  <div class="flex items-center gap-2 font-semibold">
+                    <span class="dot" :class="dotClass(t.status)"></span>
+                    <span class="break-words" x-text="t.name"></span>
+                    <span class="ml-auto text-dssi-muted" x-text="t.status"></span>
+                  </div>
+                  <div class="small break-words" x-text="t.round"></div>
+                  <div class="small" x-text="T.seen(t.seenSec)"></div>
+                </li>
+              </template>
+            </ul>
+          </section>
+        </div>
+
+        <!-- รอบ -->
+        <section class="flex flex-col gap-4">
+          <h2 class="font-heading text-2xl font-bold" x-text="T.roundsTitle"></h2>
+          <p class="small" x-show="state.rounds.length === 0" x-text="T.noRounds"></p>
+          <div class="grid gap-6 md:grid-cols-2">
+            <template x-for="r in state.rounds" :key="r.code">
+              <article class="card md:max-w-none flex flex-col gap-4">
+                <div class="flex items-center gap-2">
+                  <h3 class="font-heading text-xl font-bold break-words" x-text="r.name"></h3>
+                  <span class="badge ml-auto" x-text="r.open ? T.open : T.closed"></span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
+                  <div class="stat"><div class="stat-num" x-text="r.waiting"></div><div class="small" x-text="T.waiting"></div></div>
+                  <div class="stat"><div class="stat-num" x-text="r.busy"></div><div class="small" x-text="T.busy"></div></div>
+                  <div class="stat"><div class="stat-num" x-text="r.done"></div><div class="small" x-text="T.done"></div></div>
+                  <div class="stat"><div class="stat-num" x-text="r.skipped"></div><div class="small" x-text="T.skipped"></div></div>
+                </div>
+              </article>
+            </template>
+          </div>
+        </section>
+      </div>
+    </template>
+  </main>
+
+  <footer class="footer"><span x-text="S.course"></span></footer>
+</div>
+</body>
+</html>
