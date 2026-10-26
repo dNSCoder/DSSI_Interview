@@ -96,6 +96,8 @@ function syncRosterAuto() {
 function installRosterTrigger() {
   removeRosterTriggers_();
   ScriptApp.newTrigger('syncRosterAuto').timeBased().everyMinutes(1).create();
+  // ตั้งซิงก์ = ต้องการให้ทำงาน จึงเปิดสวิตช์ (SYNC_ENABLED) ด้วย เผื่อเคยปิดไว้จากหน้า admin
+  PropertiesService.getScriptProperties().setProperty('SYNC_ENABLED', 'true');
   return 'ตั้ง trigger ซิงก์ทุก 1 นาทีแล้ว';
 }
 
